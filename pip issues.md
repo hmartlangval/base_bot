@@ -25,3 +25,8 @@ root > pyproject.toml
 4. after build will be stored in ``dist\browser-use<verstion>.tar.gz and *whl``
 5. install this using ``pip install <relative>\dist\browser-use-<version>.tar.gx or *.whl`` either one works
 6. if install fails due to OSError then try module based install ``python -m pip install --user <path.tar.gz>``
+
+
+
+# PACKING base_bot
+Run ``python basebot_setup.py sdist``
