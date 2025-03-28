@@ -1,0 +1,11 @@
+
+>>County: brevard
+>>URL: http://localhost:5500/simplepage.html
+>>INSTRUCTIONS:
+    The order number is: [order_number]
+    extract the page as PDF and save using filename [order_number]-GSMap.pdf
+
+>>County: baker
+>>URL: http://localhost:5500/simplepage.html
+>>INSTRUCTIONS:
+    extract the page as PDF and save as "x_account_number-PA.pdf"
