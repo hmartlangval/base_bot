@@ -121,7 +121,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
                 "type": self.config["bot_type"]
             })
             
-            self.print_message(f"Registered as {self.config['bot_name']} ({self.config['bot_id']})")
+            self.print_message(f'Registered as {self.config["bot_name"]} ({self.config["bot_id"]})')
             self.display_prompt()
             
             # Emit connected event
@@ -139,12 +139,12 @@ class BaseBot(EventEmitter, ConfigurableApp):
         @self.socket.event
         def connect_error(error):
             self.state["connection_attempts"] += 1
-            self.print_message(f"Connection error: {str(error)}")
+            self.print_message(f'Connection error: {str(error)}')
             
             if self.state["connection_attempts"] < self.config["max_reconnect_attempts"]:
-                self.print_message(f"Reconnection attempt {self.state['connection_attempts']}/{self.config['max_reconnect_attempts']}...")
+                self.print_message(f'Reconnection attempt {self.state["connection_attempts"]}/{self.config["max_reconnect_attempts"]}...')
             else:
-                self.print_message(f"Failed to connect after {self.config['max_reconnect_attempts']} attempts.")
+                self.print_message(f'Failed to connect after {self.config["max_reconnect_attempts"]} attempts.')
                 self.print_message("Use /reconnect to try again or check server status.")
             
             self.display_prompt()
@@ -223,7 +223,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
         @self.socket.on("channel_status")
         def on_channel_status(data):
             self.print_message(f"Channel status: {data.get('channelId')} ({'active' if data.get('active') else 'inactive'})")
-            self.print_message(f"Participants: {len(data.get('participants', []))}")
+            self.print_message(f'Participants: {len(data.get("participants", []))}')
             
             # Update channel state
             self.state["channel_states"][data.get("channelId")] = data.get("active")
@@ -314,7 +314,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
         sys.exit(0)
     
     def runUntilStopped(self):
-        print(f"{self.config["bot_name"]} started running")
+        print(f'{self.config["bot_name"]} started running')
         try:
             self._running = True
             while self._running and not self._exit_flag.is_set():
@@ -327,12 +327,12 @@ class BaseBot(EventEmitter, ConfigurableApp):
                     print(char)
                     self.process_command(char)
                 except KeyboardInterrupt:
-                    print(f"\n{self.config["bot_name"]} process interrupted")
+                    print(f'\n{self.config["bot_name"]} process interrupted')
                     break
         except Exception as e:
-            print(f"Error in {self.config["bot_name"]}: {e}")
+            print(f'Error in {self.config["bot_name"]}: {e}')
         finally:
-            print(f"{self.config["bot_name"]} finished running")
+            print(f'{self.config["bot_name"]} finished running')
             self._running = False
             self._completed.set()  # Signal that parent has completed
         
@@ -482,7 +482,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
                     self.print_message("Not connected to server. Cannot leave channel.")
                     return
                 self.socket.emit("leave_channel", self.state["current_channel_id"])
-                self.print_message(f"Leaving channel: {self.state['current_channel_id']}")
+                self.print_message(f'Leaving channel: {self.state["current_channel_id"]}')
                 self.state["current_channel_id"] = None
                 
             elif command == 'start':
@@ -513,12 +513,12 @@ class BaseBot(EventEmitter, ConfigurableApp):
                 # When stopping a channel, set its state to inactive
                 self.state["channel_states"][self.state["current_channel_id"]] = False
                 
-                self.print_message(f"Stopping channel: {self.state['current_channel_id']}")
+                self.print_message(f'Stopping channel: {self.state["current_channel_id"]}')
                 
             elif command == 'channel':
                 new_channel_id = args[0] if args else None
                 if not new_channel_id:
-                    self.print_message(f"Current channel: {self.state['current_channel_id'] or 'None'}")
+                    self.print_message(f'Current channel: {self.state["current_channel_id"] or "None"}')
                     if self.state["current_channel_id"]:
                         is_active = self.is_channel_active(self.state["current_channel_id"])
                         self.print_message(f"Channel status: {'Active' if is_active else 'Inactive'}")
@@ -565,7 +565,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
                     # Update our local state with the server's state
                     self.state["channel_states"][data.get("channelId")] = data.get("active")
                     
-                    self.print_message(f"Participants: {len(data.get('participants', []))}")
+                    self.print_message(f'Participants: {len(data.get("participants", []))}')
                     self.print_message(f"Message count: {data.get('messageCount')}")
                 
                 self.socket.emit("get_channel_details", self.state["current_channel_id"], callback=on_channel_details)
@@ -589,7 +589,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
                         for msg in recent_messages:
                             timestamp = datetime.datetime.fromtimestamp(msg.get('timestamp') / 1000)
                             time_str = timestamp.strftime("%H:%M:%S")
-                            self.print_message(f"[{time_str}] {msg.get('senderName')}: {msg.get('content')}")
+                            self.print_message(f'[{time_str}] {msg.get("senderName")}: {msg.get("content")}')
                 
                 self.socket.emit("get_channel_messages", self.state["current_channel_id"], callback=on_channel_messages)
                 
@@ -617,7 +617,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
             
             # Check if the channel is active before sending a message
             if self.state["channel_states"].get(self.state["current_channel_id"]) is False:
-                self.print_message(f"Cannot send message: Channel {self.state['current_channel_id']} is inactive.")
+                self.print_message(f'Cannot send message: Channel {self.state["current_channel_id"]} is inactive.')
                 self.display_prompt()
                 return
             
@@ -672,11 +672,11 @@ class BaseBot(EventEmitter, ConfigurableApp):
             message (str): Message to print
         """
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"[{timestamp}] {message}")
+        print(f'[{timestamp}] {message}')
     
     def display_prompt(self):
         """Display prompt to the user"""
-        channel_status = f"({self.config["bot_id"]})[{self.state['current_channel_id']}]" if self.state["current_channel_id"] else "[no channel]"
+        channel_status = f'({self.config["bot_id"]})[{self.state["current_channel_id"]}]' if self.state["current_channel_id"] else "[no channel]"
         
         channel_active = ""
         if self.state["current_channel_id"]:
@@ -685,7 +685,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
         
         connection_status = "connected" if self.state["is_connected"] else "disconnected"
         
-        prompt = f"{channel_status}"
+        prompt = f'{channel_status}'
         if channel_active:
             prompt += f" ({channel_active})"
         prompt += f" ({connection_status}) > "
