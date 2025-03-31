@@ -14,6 +14,7 @@ class ConfigurableApp():
             
         print('configuration config for parent')
         self.config = {
-            "downloads_path": downloads_path
+            "downloads_path": downloads_path,
+            "browser_headless": self.options.get('browser_headless', False) if self.options else False
         }
 

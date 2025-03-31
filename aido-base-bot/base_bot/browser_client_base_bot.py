@@ -25,8 +25,10 @@ class BrowserClientBaseBot(LLMBotBase):
         
         if not task:
             return "No instructions provided"
+
+        headless = self.config['browser_headless']
         
-        browser = ChromiumExtension.extend_browser(headless=False)
+        browser = ChromiumExtension.extend_browser(headless)
         
         agent = Agent(
             task=task,
