@@ -67,7 +67,7 @@ class TestBrowserClient(BrowserClientBaseBot):
         
         Navigate to the following URL: {navigate_url}
         
-        {instructions}        
+        {instructions}
         """
         
         return instructions

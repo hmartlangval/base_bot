@@ -179,7 +179,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
                         
                         try:
                             
-                            json = self.extractJsonBlock(message.get("content"))
+                            json = self.extract_json_block(message.get("content"))
                             if json:
                                 message["json"] = json
                             
@@ -285,8 +285,26 @@ class BaseBot(EventEmitter, ConfigurableApp):
                 print('----------------autojoining channel', self.options.get('autojoin_channel', None))
                 self.process_command(f"/join {self.options.get('autojoin_channel', None)}")
 
+    def extract_json_block(self, content):
+        """Extract JSON block from content"""
+        try:
+            regex = re.compile(r'\[json\](.*?)\[\/json\]', re.DOTALL)
+            match = regex.search(content)
+            jsonMatch = match.group(1) if match else None
+            if jsonMatch:
+                return json.loads(jsonMatch)
+        except Exception as error:
+            self.print_message(f"Error parsing JSON: {error}")
+            return None
+    
 
-
+    def extract_json_data(self, message):
+        jsonData = message.get("jsonData", None)
+        if jsonData:
+            json_key = list(jsonData.keys())[0]
+            return jsonData[json_key]
+        return None  
+    
     # Thread management START
     
     def _signal_handler(self, sig, frame):

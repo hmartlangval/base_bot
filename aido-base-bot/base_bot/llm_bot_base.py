@@ -13,7 +13,41 @@ class LLMBotBase(BaseBot):
         self.is_prompt_loaded = False
      
         print('LLMBotBase initialized')
-        
+    
+    async def analyze_image(self, instructions, encoded_image_base64=None, image_url=None):
+        if image_url or encoded_image_base64:
+            image_source = image_url if image_url else f"data:image/jpeg;base64,{encoded_image_base64}"
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": instructions},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": image_source},
+                        },
+                    ],
+                }
+            ]
+            # return "will parse later"
+            response = await self.llm.ainvoke(messages)
+            return response.content
+        else:
+            return "PDF to image conversion failed."
+    
+    async def call(self, messages):
+        response = await self.llm.ainvoke(messages)
+        return response.content
+    
+    async def quick_load_prompts(self, prompt_path):
+        try:
+            with open(prompt_path, 'r') as f:
+                prompt_text = f.read()
+            return prompt_text
+        except Exception as e:
+            print(f"Error loading prompts: {e}")
+            return None
+
 
     async def load_prompts(self, prompts_path=None, reload=False):
         
