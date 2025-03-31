@@ -23,6 +23,9 @@ class BrowserClientBaseBot(LLMBotBase):
     
     async def call_agent(self, task, extend_system_message=None, sensitive_data=None):
         
+        if not task:
+            return "No instructions provided"
+        
         browser = ChromiumExtension.extend_browser(headless=False)
         
         agent = Agent(
