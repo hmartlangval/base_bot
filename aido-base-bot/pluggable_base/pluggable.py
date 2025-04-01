@@ -42,6 +42,9 @@ class PluggableBot:
             "active_plugins": {}   # Track currently running plugins
         }
         
+        # Service/dependency registry
+        self.services = {}
+        
         # Global queue for results from plugin threads
         self.result_queue = queue.Queue()
         
@@ -272,6 +275,18 @@ class PluggableBot:
             plugin_result = None
             bot_instance = None
             
+            # Check if the handler wants dependency injection
+            # Look for a 'get_dependencies' function that returns a list of required dependencies
+            dependencies = {}
+            if hasattr(module, 'get_dependencies') and callable(module.get_dependencies):
+                required_deps = module.get_dependencies()
+                if isinstance(required_deps, list):
+                    for dep_name in required_deps:
+                        if self.has_service(dep_name):
+                            dependencies[dep_name] = self.get_service(dep_name)
+                        else:
+                            self.print_message(f"Warning: Plugin {plugin_name} requested dependency '{dep_name}' which is not available")
+            
             # Check if the handler is asynchronous
             if asyncio.iscoroutinefunction(handler_function):
                 # Create a completely new event loop for this plugin execution
@@ -283,17 +298,25 @@ class PluggableBot:
                 
                 try:
                     # Run the async function in the isolated loop
-                    plugin_result = loop.run_until_complete(handler_function(message_data))
+                    # Pass dependencies if the function accepts them
+                    import inspect
+                    sig = inspect.signature(handler_function)
+                    
+                    if len(sig.parameters) > 1 and 'deps' in sig.parameters:
+                        # Function accepts deps parameter
+                        plugin_result = loop.run_until_complete(handler_function(message_data, deps=dependencies))
+                    else:
+                        # Standard function with just message_data
+                        plugin_result = loop.run_until_complete(handler_function(message_data))
                     
                     # Look for BaseBotShaken instances in the module globals
                     for var_name in dir(module):
                         var = getattr(module, var_name)
-                        if var.__class__.__name__ == 'BaseBotShaken':
+                        if hasattr(var, '__class__') and var.__class__.__name__ == 'BaseBotShaken':
                             bot_instance = var
                             break
                         
                     # Also inspect local variables in current frame for BaseBotShaken instances
-                    import inspect
                     if 'bot' in module.__dict__:
                         bot_instance = module.__dict__['bot']
                     
@@ -346,7 +369,16 @@ class PluggableBot:
                     gc.collect()
             else:
                 # Call the synchronous handler directly
-                plugin_result = handler_function(message_data)
+                # Check if it wants dependencies
+                import inspect
+                sig = inspect.signature(handler_function)
+                
+                if len(sig.parameters) > 1 and 'deps' in sig.parameters:
+                    # Function accepts deps parameter
+                    plugin_result = handler_function(message_data, deps=dependencies)
+                else:
+                    # Standard function with just message_data
+                    plugin_result = handler_function(message_data)
                 
             # Store the result
             self.result_queue.put((plugin_name, plugin_result, execution_id))
@@ -660,6 +692,22 @@ class PluggableBot:
         except Exception as e:
             self.print_message(f"Error starting bot: {e}")
             sys.exit(1)
+
+    def register_service(self, service_name, service_instance):
+        """Register a service or dependency that plugins can access"""
+        self.services[service_name] = service_instance
+        self.print_message(f"Registered service: {service_name}")
+        return service_instance
+        
+    def get_service(self, service_name):
+        """Get a registered service by name"""
+        if service_name not in self.services:
+            raise KeyError(f"Service not found: {service_name}")
+        return self.services[service_name]
+        
+    def has_service(self, service_name):
+        """Check if a service is registered"""
+        return service_name in self.services
 
 
 # Simple example of a child class
