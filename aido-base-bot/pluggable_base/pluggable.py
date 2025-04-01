@@ -4,7 +4,6 @@ import threading
 import queue
 import json
 import socketio
-import eventlet
 import sys
 import signal
 import datetime
@@ -13,14 +12,20 @@ import time
 import asyncio
 import concurrent.futures
 import gc
+from __init__ import get_application_path
 
 class PluggableBot:
     def __init__(self, options=None):
         # Initialize options with defaults and overrides
         options = options or {}
         
+        base_path = get_application_path()
+        
         # Check for dev mode in environment variables
         self.dev_mode = os.environ.get('BOT_DEV_MODE', 'false').lower() == 'true'
+        
+        # Default paths based on base_path
+        default_plugins_path = options.get("plugins_path", os.path.join(base_path, "plugins"))
         
         # Bot configuration
         self.config = {
@@ -31,8 +36,17 @@ class PluggableBot:
             "default_channel": options.get("default_channel", "general"),
             "max_reconnect_attempts": int(options.get("max_reconnect_attempts", 5)),
             "socketio_path": options.get("socketio_path", "/api/socket"),
-            "plugins_path": options.get("plugins_path", "plugins")
+            "plugins_path": default_plugins_path
         }
+        
+        # Add base_path to sys.path to help imports
+        if base_path not in sys.path:
+            sys.path.insert(0, base_path)
+        
+        # Print path information for debugging
+        self.base_path = base_path
+        print(f"Application base path: {base_path}")
+        print(f"Plugins path: {self.config['plugins_path']}")
         
         # Bot state
         self.state = {
@@ -66,6 +80,10 @@ class PluggableBot:
         
         # Store module timestamps for dev mode
         self.module_timestamps = {}
+        
+        # Create main asyncio event loop and task scheduler
+        self.main_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.main_loop)
         
         # Initialize the bot
         self.init()
@@ -190,20 +208,74 @@ class PluggableBot:
         message_tags = message.get("tags", [])
         message_content = message.get("content")
         
+        # Extract JSON data for plugins that need it
         message["jsonArray"] = self.extract_json_data_as_array(message)
         message["jsonBlock"] = self.extract_json_block(message_content)
         
-        
-        # message_sender = message.get("senderId")
-        
         if message_tags:
             for tag in message_tags:
-                plugin_name = f"{self.config['plugins_path']}.{tag}_handler"
-                try:
-                    # Check if we can find the plugin module
-                    self.execute_plugin(plugin_name, message)
-                except ImportError:
-                    self.print_message(f"Plugin '{plugin_name}' does not exist.")
+                # Determine full plugin file path
+                plugin_filename = f"{tag}_handler.py"
+                plugin_path = os.path.join(self.config['plugins_path'], plugin_filename)
+                
+                # First check if the file exists directly
+                if os.path.exists(plugin_path):
+                    try:
+                        # Try to load the module from file path
+                        import importlib.util
+                        spec = importlib.util.spec_from_file_location(
+                            f"{tag}_handler", 
+                            plugin_path
+                        )
+                        module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(module)
+                        
+                        # Create a unique execution ID
+                        execution_id = f"{tag}_handler_{datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+                        
+                        # Execute in a thread
+                        thread = threading.Thread(
+                            target=self._execute_plugin_thread_from_module,
+                            args=(module, message, execution_id)
+                        )
+                        thread.daemon = True
+                        thread.start()
+                        
+                        # Track the active plugin
+                        self.state["active_plugins"][execution_id] = {
+                            "plugin_name": f"{tag}_handler",
+                            "start_time": datetime.datetime.now(),
+                            "status": "running"
+                        }
+                        
+                        # Schedule check for results
+                        self._schedule_task(self.check_results())
+                        
+                    except Exception as e:
+                        self.print_message(f"Error loading plugin from file '{plugin_path}': {e}")
+                else:
+                    # Try module import approach (for bundled installation)
+                    try:
+                        # Several possible module paths to try
+                        module_paths = [
+                            f"{self.config['plugins_path']}.{tag}_handler",  # pluggable_base.plugins.echo_handler
+                            f"plugins.{tag}_handler",                        # plugins.echo_handler (relative)
+                            f"{tag}_handler"                                 # echo_handler (direct)
+                        ]
+                        
+                        for module_path in module_paths:
+                            try:
+                                self.print_message(f"Trying to load plugin from module: {module_path}")
+                                self.execute_plugin(module_path, message)
+                                break  # If successful, stop trying other paths
+                            except ImportError:
+                                continue  # Try the next module path
+                        else:
+                            # None of the module paths worked
+                            self.print_message(f"Plugin '{tag}_handler' could not be found or imported.")
+                            
+                    except Exception as e:
+                        self.print_message(f"Error executing plugin '{tag}_handler': {e}")
         else:
             # Let the child class handle it
             self.on_message(message)
@@ -229,7 +301,7 @@ class PluggableBot:
         }
         
         # Start a background task to check for results
-        eventlet.spawn(self.check_results)
+        self._schedule_task(self.check_results())
         
         return execution_id
     
@@ -401,10 +473,10 @@ class PluggableBot:
             self.state["active_plugins"][execution_id]["error"] = str(e)
             self.state["active_plugins"][execution_id]["end_time"] = datetime.datetime.now()
     
-    def check_results(self):
-        """Check for results from plugin execution"""
+    async def check_results(self):
+        """Check for results from plugin execution - async coroutine"""
         # Wait a bit for plugin execution
-        eventlet.sleep(0.1)
+        await asyncio.sleep(0.1)
         while not self.result_queue.empty():
             plugin_name, result, execution_id = self.result_queue.get()
             
@@ -474,18 +546,21 @@ class PluggableBot:
     
     # Utility methods
     def extract_json_block(self, content):
-        """Extract JSON block from content"""
-        try:
-            regex = re.compile(r'\[json\](.*?)\[\/json\]', re.DOTALL)
-            match = regex.search(content)
-            jsonMatch = match.group(1) if match else None
-            if jsonMatch:
-                return json.loads(jsonMatch)
-        except Exception as error:
-            self.print_message(f"Error parsing JSON: {error}")
+        """Extract JSON block from a message content"""
+        if not content:
             return None
+        import re
+        json_matches = re.findall(r'```json(.*?)```', content, re.DOTALL)
+        if json_matches:
+            try:
+                import json
+                return json.loads(json_matches[0].strip())
+            except:
+                return None
+        return None
         
     def extract_json_data(self, message):
+        """Extract JSON data from a message which is in message's jsonData field"""
         jsonData = message.get("jsonData", None)
         if jsonData:
             json_key = list(jsonData.keys())[0]
@@ -493,6 +568,7 @@ class PluggableBot:
         return None  
     
     def extract_json_data_as_array(self, message):
+        """Extract JSON data as array from a message which is within [json][/json] tags"""
         jsonData = message.get("jsonData", None)
         if jsonData:
             json_keys = list(jsonData.keys())
@@ -614,6 +690,12 @@ class PluggableBot:
                             running_time = (datetime.datetime.now() - start_time).total_seconds()
                             self.print_message(f"- {info.get('plugin_name')} (running for {running_time:.2f}s)")
                     
+            elif command == 'discover':
+                services_dir = args[0] if args else None
+                count = self.discover_services(services_dir)
+                self.print_message(f"Discovered {count} services")
+                return True
+            
             elif command == 'help':
                 self.show_help()
                     
@@ -646,7 +728,93 @@ class PluggableBot:
     
     def handle_custom_command(self, command, args):
         """Handle custom commands - override in child class"""
+        # Child classes should override this
         return False
+    
+    def discover_services(self, services_dir=None):
+        """Discover and load service definitions from a directory"""
+        import importlib.util
+        
+        if services_dir is None:
+            base_path = get_application_path()
+            services_dir = os.path.join(base_path, "services")
+        
+        if not os.path.exists(services_dir):
+            self.print_message(f"Services directory not found: {services_dir}")
+            return 0
+            
+        self.print_message(f"Discovering services in: {services_dir}")
+        service_count = 0
+        
+        for filename in os.listdir(services_dir):
+            # Look for service modules, which could be Python files or directories with __init__.py
+            if filename.endswith('_service.py'):
+                service_name = filename[:-11]  # Remove _service.py suffix
+                try:
+                    # Add the services directory to path temporarily
+                    sys.path.insert(0, os.path.dirname(services_dir))
+                    
+                    # Import the module dynamically
+                    spec = importlib.util.spec_from_file_location(
+                        service_name, 
+                        os.path.join(services_dir, filename)
+                    )
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    
+                    # Look for a service class
+                    service_class_name = f"{service_name.capitalize()}Service"
+                    if hasattr(module, service_class_name):
+                        service_class = getattr(module, service_class_name)
+                        
+                        # Check if we already have this service registered
+                        if service_name in self.services:
+                            self.print_message(f"Service '{service_name}' is already registered, skipping")
+                        else:
+                            # Register the service with socket access
+                            service_instance = service_class(self.sio)
+                            self.register_service(service_name, service_instance)
+                            service_count += 1
+                            self.print_message(f"Loaded service: {service_name}")
+                    else:
+                        self.print_message(f"No service class found in {filename}")
+                    
+                    # Remove from path
+                    sys.path.pop(0)
+                    
+                except Exception as e:
+                    self.print_message(f"Error loading service {service_name}: {str(e)}")
+            
+            # Also check for directories that might be service packages
+            elif os.path.isdir(os.path.join(services_dir, filename)) and not filename.startswith('__'):
+                init_path = os.path.join(services_dir, filename, '__init__.py')
+                if os.path.exists(init_path):
+                    try:
+                        # Try to import as a package
+                        module_name = f"services.{filename}"
+                        if module_name in sys.modules:
+                            module = importlib.reload(sys.modules[module_name])
+                        else:
+                            module = importlib.import_module(module_name)
+                        
+                        # Look for a service class
+                        service_class_name = f"{filename.capitalize()}Service"
+                        if hasattr(module, service_class_name):
+                            service_class = getattr(module, service_class_name)
+                            
+                            # Check if we already have this service registered
+                            if filename in self.services:
+                                self.print_message(f"Service '{filename}' is already registered, skipping")
+                            else:
+                                # Register the service with socket access
+                                service_instance = service_class(self.sio)
+                                self.register_service(filename, service_instance)
+                                service_count += 1
+                                self.print_message(f"Loaded service package: {filename}")
+                    except Exception as e:
+                        self.print_message(f"Error loading service package {filename}: {str(e)}")
+        
+        return service_count
     
     def send_message(self, content):
         """Send a message to the current channel"""
@@ -665,6 +833,7 @@ class PluggableBot:
         self.print_message("/mode - Toggle between development and production mode")
         self.print_message("/reload - Force reload all plugins (dev mode only)")
         self.print_message("/plugins - Show status of running plugins")
+        self.print_message("/discover [directory] - Discover and load services")
         self.print_message("/help - Show this help message")
         self.print_message("/exit - Exit the bot")
 
@@ -691,6 +860,9 @@ class PluggableBot:
         # Shutdown thread pool executor
         self.executor.shutdown(wait=False)
         
+        # Stop the asyncio event loop
+        self.main_loop.call_soon_threadsafe(self.main_loop.stop)
+        
         self.print_message("Exiting bot")
         
         # Restore original signal handler
@@ -715,6 +887,10 @@ class PluggableBot:
         self.print_message(f"Connecting to {self.config['server_url']}")
         
         try:
+            # Start asyncio loop in a separate thread
+            loop_thread = threading.Thread(target=self._run_event_loop, daemon=True)
+            loop_thread.start()
+            
             # Connect to the server
             self.connect()
             
@@ -727,7 +903,12 @@ class PluggableBot:
         except Exception as e:
             self.print_message(f"Error starting bot: {e}")
             sys.exit(1)
-
+            
+    def _run_event_loop(self):
+        """Run the asyncio event loop in a separate thread"""
+        asyncio.set_event_loop(self.main_loop)
+        self.main_loop.run_forever()
+    
     def register_service(self, service_name, service_instance):
         """Register a service or dependency that plugins can access"""
         self.services[service_name] = service_instance
@@ -743,6 +924,141 @@ class PluggableBot:
     def has_service(self, service_name):
         """Check if a service is registered"""
         return service_name in self.services
+
+    def _schedule_task(self, coroutine):
+        """Schedule a coroutine to run in the background"""
+        # Run in executor to avoid blocking and ensure it works in the main thread
+        future = asyncio.run_coroutine_threadsafe(coroutine, self.main_loop)
+        return future
+
+    def _execute_plugin_thread_from_module(self, module, message, execution_id):
+        """Execute a plugin from a directly loaded module"""
+        try:
+            if not hasattr(module, "handle_message"):
+                raise AttributeError(f"Module does not have handle_message function")
+                
+            handler_function = module.handle_message
+            plugin_result = None
+            bot_instance = None
+            plugin_name = execution_id.split('_')[0] + "_handler"
+            
+            # Check if the handler wants dependency injection
+            dependencies = {}
+            if hasattr(module, 'get_dependencies') and callable(module.get_dependencies):
+                required_deps = module.get_dependencies()
+                if isinstance(required_deps, list):
+                    for dep_name in required_deps:
+                        if self.has_service(dep_name):
+                            dependencies[dep_name] = self.get_service(dep_name)
+                        else:
+                            self.print_message(f"Warning: Plugin {plugin_name} requested dependency '{dep_name}' which is not available")
+            
+            # Rest of the function identical to _execute_plugin_thread
+            if asyncio.iscoroutinefunction(handler_function):
+                # Create a completely new event loop for this plugin execution
+                loop = asyncio.new_event_loop()
+                
+                # Important: Set this new loop as the thread-local event loop
+                asyncio.set_event_loop(loop)
+                
+                try:
+                    # Run the async function in the isolated loop
+                    # Pass dependencies if the function accepts them
+                    import inspect
+                    sig = inspect.signature(handler_function)
+                    
+                    if len(sig.parameters) > 1 and 'deps' in sig.parameters:
+                        # Function accepts deps parameter
+                        plugin_result = loop.run_until_complete(handler_function(message, deps=dependencies))
+                    else:
+                        # Standard function with just message_data
+                        plugin_result = loop.run_until_complete(handler_function(message))
+                    
+                    # Look for BaseBotShaken instances in the module globals
+                    for var_name in dir(module):
+                        var = getattr(module, var_name)
+                        if hasattr(var, '__class__') and var.__class__.__name__ == 'BaseBotShaken':
+                            bot_instance = var
+                            break
+                        
+                    # Also inspect local variables in current frame for BaseBotShaken instances
+                    if 'bot' in module.__dict__:
+                        bot_instance = module.__dict__['bot']
+                    
+                    # If we found a BaseBotShaken instance, clean it up
+                    if bot_instance and hasattr(bot_instance, 'cleanup'):
+                        if asyncio.iscoroutinefunction(bot_instance.cleanup):
+                            loop.run_until_complete(bot_instance.cleanup())
+                        elif callable(bot_instance.cleanup):
+                            bot_instance.cleanup()
+                        self.print_message(f"Automatically cleaned up BaseBotShaken instance in {plugin_name}")
+                    
+                    # Run a final iteration to ensure all cleanups are processed
+                    loop.run_until_complete(asyncio.sleep(0.1))
+                except Exception as e:
+                    self.print_message(f"Error in async plugin {plugin_name}: {str(e)}")
+                    raise
+                finally:
+                    # Set the bot instance to None to help with garbage collection
+                    if bot_instance:
+                        bot_instance = None
+                    
+                    # Cancel all remaining tasks in this loop
+                    pending = asyncio.all_tasks(loop)
+                    if pending:
+                        for task in pending:
+                            task.cancel()
+                        
+                        # Allow tasks to respond to cancellation
+                        try:
+                            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                        except (asyncio.CancelledError, RuntimeError):
+                            # Ignore cancellation errors
+                            pass
+                    
+                    # Close the event loop but catch any errors
+                    try:
+                        loop.run_until_complete(loop.shutdown_asyncgens())
+                    except (RuntimeError, GeneratorExit):
+                        pass
+                    
+                    try:
+                        loop.close()
+                    except RuntimeError:
+                        pass
+                    
+                    # Set thread loop to None to ensure garbage collection
+                    asyncio.set_event_loop(None)
+                    
+                    # Force garbage collection
+                    gc.collect()
+            else:
+                # Call the synchronous handler directly
+                # Check if it wants dependencies
+                import inspect
+                sig = inspect.signature(handler_function)
+                
+                if len(sig.parameters) > 1 and 'deps' in sig.parameters:
+                    # Function accepts deps parameter
+                    plugin_result = handler_function(message, deps=dependencies)
+                else:
+                    # Standard function with just message_data
+                    plugin_result = handler_function(message)
+            
+            # Store the result
+            self.result_queue.put((plugin_name, plugin_result, execution_id))
+            
+            # Update plugin status
+            self.state["active_plugins"][execution_id]["status"] = "completed"
+            self.state["active_plugins"][execution_id]["end_time"] = datetime.datetime.now()
+            
+        except Exception as e:
+            self.result_queue.put((plugin_name, f"Error: {e}", execution_id))
+            
+            # Update plugin status
+            self.state["active_plugins"][execution_id]["status"] = "error"
+            self.state["active_plugins"][execution_id]["error"] = str(e)
+            self.state["active_plugins"][execution_id]["end_time"] = datetime.datetime.now()
 
 
 # Simple example of a child class
