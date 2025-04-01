@@ -1,0 +1,8 @@
+You are navigating a webpage https://www.paslc.gov/map/?ParcelID=1101-111-0001-000-1
+Accept the terms popup
+Take a webpage screenshot
+
+Use the following controls
+custom_control1: ".dijitSliderDecrementIconV"
+custom_control2: ".dijitSliderIncrementIconV"
+

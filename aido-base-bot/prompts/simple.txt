@@ -1,0 +1,2 @@
+You are navigating a webpage http://localhost:5500/simplepage.html
+save the page as pdf
