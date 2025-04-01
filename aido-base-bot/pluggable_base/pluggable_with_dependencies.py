@@ -7,6 +7,7 @@ import logging
 from pluggable import PluggableBot
 from services import LoggerService, DatabaseService, ConfigService
 from services.base_bot_shaken import BaseBotShaken
+from services.queue_manager import QueueManager
 
 # Extended bot class with dependency injection
 class EnhancedBot(PluggableBot):
@@ -23,6 +24,7 @@ class EnhancedBot(PluggableBot):
         db_service = self.register_service("database", DatabaseService)
         config_service = self.register_service("config", ConfigService)
         browser_service = self.register_service("browser", BaseBotShaken)
+        queue_manager_service = self.register_service("queue_manager", QueueManager)
         
         # Use the config service for bot configuration
         self.config["bot_name"] = config_service.get("bot_name", self.config["bot_name"])

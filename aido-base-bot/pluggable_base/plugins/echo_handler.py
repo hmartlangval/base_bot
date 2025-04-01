@@ -11,7 +11,7 @@ load_dotenv()
 def get_dependencies():
     return ["config", "logger", "database", "browser"]
 
-async def handle_message(message_data, deps=None):
+async def handle_message(message, deps=None):
     """
     Echo handler plugin - demonstrates dynamic reloading and dependency injection
     
@@ -21,7 +21,7 @@ async def handle_message(message_data, deps=None):
     if deps:
         # Log using injected logger if available
         if "logger" in deps:
-            deps["logger"].info(f"Echo handler processing: {message_data}")
+            deps["logger"].info(f"Echo handler processing: {message.get('content', None)}")
         
         # Use injected config if available
         config = deps.get("config", {})
@@ -29,8 +29,9 @@ async def handle_message(message_data, deps=None):
     else:
         wait_time = 1
     
+    content = message.get("content", None)
     timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-    print(f"Echo handler processing at {timestamp}: {message_data}")
+    print(f"Echo handler processing at {timestamp}: {content}")
     
     # Use asyncio.sleep instead of time.sleep in async functions
     await asyncio.sleep(wait_time)  # simulate processing asynchronously with configurable wait time
@@ -42,8 +43,8 @@ async def handle_message(message_data, deps=None):
     
     # Store in database if available
     if deps and "database" in deps and agent_response is not None:
-        deps["database"].store_response(timestamp, message_data, agent_response)
-        deps["database"].send_message("general", f"Echo response at {timestamp}: {message_data} (Agent: {agent_response})")
+        deps["database"].store_response(timestamp, content, agent_response)
+        deps["database"].send_message("general", f"Echo response at {timestamp}: {content} (Agent: {agent_response})")
     
     # Return the response
     # return f"Echo response at {timestamp}: {message_data} (Agent: {agent_response})"

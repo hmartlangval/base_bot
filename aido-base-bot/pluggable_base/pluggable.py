@@ -1,4 +1,5 @@
 import importlib
+import re
 import threading
 import queue
 import json
@@ -188,6 +189,11 @@ class PluggableBot:
         # Default implementation using plugin system
         message_tags = message.get("tags", [])
         message_content = message.get("content")
+        
+        message["jsonArray"] = self.extract_json_data_as_array(message)
+        message["jsonBlock"] = self.extract_json_block(message_content)
+        
+        
         # message_sender = message.get("senderId")
         
         if message_tags:
@@ -195,7 +201,7 @@ class PluggableBot:
                 plugin_name = f"{self.config['plugins_path']}.{tag}_handler"
                 try:
                     # Check if we can find the plugin module
-                    self.execute_plugin(plugin_name, message_content)
+                    self.execute_plugin(plugin_name, message)
                 except ImportError:
                     self.print_message(f"Plugin '{plugin_name}' does not exist.")
         else:
@@ -467,6 +473,35 @@ class PluggableBot:
         pass
     
     # Utility methods
+    def extract_json_block(self, content):
+        """Extract JSON block from content"""
+        try:
+            regex = re.compile(r'\[json\](.*?)\[\/json\]', re.DOTALL)
+            match = regex.search(content)
+            jsonMatch = match.group(1) if match else None
+            if jsonMatch:
+                return json.loads(jsonMatch)
+        except Exception as error:
+            self.print_message(f"Error parsing JSON: {error}")
+            return None
+        
+    def extract_json_data(self, message):
+        jsonData = message.get("jsonData", None)
+        if jsonData:
+            json_key = list(jsonData.keys())[0]
+            return jsonData[json_key]
+        return None  
+    
+    def extract_json_data_as_array(self, message):
+        jsonData = message.get("jsonData", None)
+        if jsonData:
+            json_keys = list(jsonData.keys())
+            json_array = []
+            for key in json_keys:
+                json_array.append(jsonData[key])
+            return json_array
+        return []
+    
     def print_message(self, message):
         """Print a message with timestamp"""
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
