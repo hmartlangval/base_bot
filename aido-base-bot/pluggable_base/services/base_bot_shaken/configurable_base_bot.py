@@ -2,7 +2,7 @@ import os
 
 class ConfigurableApp():
     def __init__(self, options=None):
-        
+      
         self.options = options or {}
         
         opt_downloads_path = self.options.get('downloads_path', "downloads") if self.options else "downloads"

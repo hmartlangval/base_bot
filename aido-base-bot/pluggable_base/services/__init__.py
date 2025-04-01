@@ -1,29 +1,12 @@
 import os
 import logging
 
-# Base class for socket-aware services
-class SocketAwareService:
-    def __init__(self, socket_io=None):
-        self.socket_io = socket_io
-    
-    def set_socket_io(self, socket_io):
-        """Set the socket.io client instance"""
-        self.socket_io = socket_io
-    
-    def send_message(self, channel_id, content):
-        """Send a message to a channel"""
-        if self.socket_io:
-            self.socket_io.emit("message", {
-                "channelId": channel_id,
-                "content": content
-            })
-            return True
-        return False
+from services.service_base import SocketAwareService
 
 # Example Logger service with socket awareness
 class LoggerService(SocketAwareService):
-    def __init__(self, socket_io=None):
-        super().__init__(socket_io)
+    def __init__(self, socket_io=None, options=None, *args, **kwargs):
+        SocketAwareService.__init__(self, socket_io, options, *args, **kwargs)
         # Set up logging
         logging.basicConfig(
             level=logging.INFO,
@@ -47,8 +30,8 @@ class LoggerService(SocketAwareService):
 
 # Example Database service with socket awareness
 class DatabaseService(SocketAwareService):
-    def __init__(self, socket_io=None):
-        super().__init__(socket_io)
+    def __init__(self, socket_io=None, options=None, *args, **kwargs):
+        SocketAwareService.__init__(self, socket_io, options, *args, **kwargs)
         self.responses = []
         self.info("Database service initialized")
     
@@ -74,8 +57,8 @@ class DatabaseService(SocketAwareService):
 
 # Example Config service with socket awareness
 class ConfigService(SocketAwareService):
-    def __init__(self, socket_io=None):
-        super().__init__(socket_io)
+    def __init__(self, socket_io=None, options=None, *args, **kwargs):
+        SocketAwareService.__init__(self, socket_io, options, *args, **kwargs)
         # Default configuration
         self.config = {
             "echo_wait_time": 2,

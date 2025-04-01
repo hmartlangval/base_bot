@@ -1,6 +1,6 @@
 from langchain_openai import ChatOpenAI
 
-from base_bot_shaken.configurable_base_bot import ConfigurableApp
+from .configurable_base_bot import ConfigurableApp
 
 class LLMBotBase(ConfigurableApp):
     def __init__(self, options=None):

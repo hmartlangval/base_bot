@@ -6,20 +6,23 @@ import os
 import logging
 from pluggable import PluggableBot
 from services import LoggerService, DatabaseService, ConfigService
+from services.base_bot_shaken import BaseBotShaken
+
 # Extended bot class with dependency injection
 class EnhancedBot(PluggableBot):
-    def __init__(self, options=None):
-        super().__init__(options)
+    def __init__(self, options=None, *args, **kwargs):
+        super().__init__(options, *args, **kwargs)
         
         # Set up and register services
         self.setup_services()
-    
+        
     def setup_services(self):
         """Set up and register services for dependency injection"""
         # Register services with socket access
         logger_service = self.register_service("logger", LoggerService)
         db_service = self.register_service("database", DatabaseService)
         config_service = self.register_service("config", ConfigService)
+        browser_service = self.register_service("browser", BaseBotShaken)
         
         # Use the config service for bot configuration
         self.config["bot_name"] = config_service.get("bot_name", self.config["bot_name"])

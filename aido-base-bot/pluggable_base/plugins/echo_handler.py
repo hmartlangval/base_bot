@@ -3,13 +3,13 @@ import datetime
 import asyncio
 from dotenv import load_dotenv
 
-from base_bot_shaken import BaseBotShaken
+# from base_bot_shaken import BaseBotShaken
 
 load_dotenv()
 
 # Specify which dependencies this plugin requires
 def get_dependencies():
-    return ["config", "logger", "database"]
+    return ["config", "logger", "database", "browser"]
 
 async def handle_message(message_data, deps=None):
     """
@@ -35,19 +35,16 @@ async def handle_message(message_data, deps=None):
     # Use asyncio.sleep instead of time.sleep in async functions
     await asyncio.sleep(wait_time)  # simulate processing asynchronously with configurable wait time
     
-    # Create a bot instance
-    bot = BaseBotShaken()
-    
-    # Call the agent asynchronously
-    agent_response = await bot.call_agent("navigate to http://localhost:5500/simplepage.html page. Do nothing else. Wait for 5 seconds. Exit.")
-    
-    print('Bot initialized without errors')
-    print(f'Agent response: {agent_response}')
+    if deps and "browser" in deps:
+        bot = deps["browser"]
+        agent_response = await bot.call_agent("navigate to http://localhost:5500/simplepage.html page. Do nothing else. Wait for 5 seconds. Exit.")
+        print(f'Agent response: {agent_response}')
     
     # Store in database if available
-    if deps and "database" in deps:
+    if deps and "database" in deps and agent_response is not None:
         deps["database"].store_response(timestamp, message_data, agent_response)
         deps["database"].send_message("general", f"Echo response at {timestamp}: {message_data} (Agent: {agent_response})")
     
     # Return the response
-    return f"Echo response at {timestamp}: {message_data} (Agent: {agent_response})"
+    # return f"Echo response at {timestamp}: {message_data} (Agent: {agent_response})"
+    return "I AM DONE -----------------"
