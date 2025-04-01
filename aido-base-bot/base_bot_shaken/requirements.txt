@@ -1,0 +1,2 @@
+https://github.com/hmartlangval/base_bot/releases/download/local-browser-use-initial/browser_use-0.1.40.tar.gz
+langchain-openai
