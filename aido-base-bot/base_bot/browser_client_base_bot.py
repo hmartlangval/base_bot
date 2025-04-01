@@ -4,6 +4,7 @@ from browser_use import Agent, Controller
 
 from base_bot.extensions.chromium_extension import ChromiumExtension
 from base_bot.extensions.pdf_save_extension import PDFExtension
+from base_bot.extensions.map_extension import WebpageScreenshotExtension
 
 from base_bot.llm_bot_base import LLMBotBase
 
@@ -17,6 +18,9 @@ class BrowserClientBaseBot(LLMBotBase):
         
         pdf_extension = PDFExtension(configuration=self.config)
         pdf_extension.extend(self.controller)
+        
+        webpage_screenshot_extension = WebpageScreenshotExtension(configuration=self.config)
+        webpage_screenshot_extension.extend(self.controller)
         
         print('BrowserClientBaseBot initialized')
         
