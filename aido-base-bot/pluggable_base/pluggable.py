@@ -1059,25 +1059,3 @@ class PluggableBot:
             self.state["active_plugins"][execution_id]["status"] = "error"
             self.state["active_plugins"][execution_id]["error"] = str(e)
             self.state["active_plugins"][execution_id]["end_time"] = datetime.datetime.now()
-
-
-# Simple example of a child class
-class SimpleMessageBot(PluggableBot):
-    def __init__(self, options=None):
-        super().__init__(options)
-    
-    def on_message(self, message):
-        """Handle messages that weren't processed by plugins"""
-        # Simple echo response
-        content = message.get("content", "")
-        sender = message.get("senderName", "Someone")
-        response = f"Echo: {content}"
-        
-        if self.state["current_channel_id"]:
-            self.send_message(response)
-
-
-# If this file is run directly, start a SimpleMessageBot
-if __name__ == "__main__":
-    bot = SimpleMessageBot()
-    bot.start()

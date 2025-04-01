@@ -17,7 +17,7 @@ class EnhancedBot(PluggableBot):
     def __init__(self, options=None, *args, **kwargs):
         
         base_path = get_application_path()
-        default_options = {
+        self.configuration = {
             "plugins_path": os.path.join(base_path, "plugins"),
             "services_path": os.path.join(base_path, "services"),
             "config_path": os.path.join(base_path, "config")
@@ -25,11 +25,11 @@ class EnhancedBot(PluggableBot):
         
         # Merge with provided options
         if options:
-            for key, value in default_options.items():
+            for key, value in self.configuration.items():
                 if key not in options:
                     options[key] = value
         else:
-            options = default_options
+            options = self.configuration
             
         super().__init__(options, *args, **kwargs)
         
@@ -43,8 +43,7 @@ class EnhancedBot(PluggableBot):
     
     def discover_services(self, services_dir=None):
         """Discover and load service definitions from a directory"""
-        if services_dir is None:
-            services_dir = os.path.join(get_application_path(), "services")
+        services_dir = self.configuration["services_path"]
         
         if not os.path.exists(services_dir):
             self.print_message(f"Services directory not found: {services_dir}")
@@ -90,21 +89,29 @@ class EnhancedBot(PluggableBot):
     def setup_services(self):
         """Set up and register services for dependency injection"""
         # Register services with socket access
-        logger_service = self.register_service("logger", LoggerService)
-        db_service = self.register_service("database", DatabaseService)
+        self.register_service("logger", LoggerService)
+        self.register_service("database", DatabaseService)
         config_service = self.register_service("config", ConfigService)
-        browser_service = self.register_service("browser", BaseBotShaken)
-        queue_manager_service = self.register_service("queue_manager", QueueManager)
+        self.register_service("browser", BaseBotShaken)
+        self.register_service("queue_manager", QueueManager, ["config", "logger"])
+        
+        # logger_service = self.register_service("logger", LoggerService)
+        # db_service = self.register_service("database", DatabaseService)
+        # config_service = self.register_service("config", ConfigService)
+        # browser_service = self.register_service("browser", BaseBotShaken)
+        # queue_manager_service = self.register_service("queue_manager", QueueManager)
         
         # Use the config service for bot configuration
         self.config["bot_name"] = config_service.get("bot_name", self.config["bot_name"])
 
-    def register_service(self, service_name, service_instance_or_class, *args, **kwargs):
+    def register_service(self, service_name, service_instance_or_class, dependencies=None, *args, **kwargs):
         """Register a service or dependency that plugins can access
         
         This can accept either:
         - An already instantiated service
         - A service class that will be instantiated with socket access
+        
+        Dependencies can be injected automatically by providing their names
         """
         if isinstance(service_instance_or_class, type):
             # It's a class, instantiate it with socket access and args
@@ -121,7 +128,17 @@ class EnhancedBot(PluggableBot):
             else:
                 self.print_message(f"Registered service: {service_name}")
             self.services[service_name] = service
-            
+        
+        # Inject dependencies if specified
+        if dependencies:
+            for dep_name in dependencies:
+                if self.has_service(dep_name):
+                    # Set the dependency as an attribute with the same name
+                    setattr(service, dep_name, self.get_service(dep_name))
+                    self.print_message(f"  - Injected dependency '{dep_name}'")
+                else:
+                    self.print_message(f"  - Warning: Dependency '{dep_name}' not available")
+        
         return service
 
     def handle_custom_command(self, command, args):

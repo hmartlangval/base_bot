@@ -1,3 +1,4 @@
+import os
 from services.service_base import SocketAwareService
 from services.base_bot_shaken import LLMBotBase
 import json
@@ -43,7 +44,7 @@ class QueueManager(SocketAwareService, LLMBotBase):
                     userInput_json = None
                     pdf_path = item.get("pdf_path", None)
                     if pdf_path:
-                        instructions = await self.quick_load_prompts("../prompts/pdf_text_extraction.txt")
+                        instructions = await self.quick_load_prompts(os.path.join(self.config.get("prompts_path"), "pdf_text_extraction.txt"))
                         instructions = instructions.replace("[order_number]", PdfToImage.get_file_name_from_path(item.get("original_filename", "ai-do-not-fill")))
                         
                         text = PdfToImage.extract_text_from_pdf(pdf_path=pdf_path)
@@ -52,7 +53,7 @@ class QueueManager(SocketAwareService, LLMBotBase):
                         result = await self.call(instructions)
                         clean_parsed = clean_json_string(result)
                         userInput_json = json.loads(clean_parsed)
-                        userInput = "PDF has been analyzed from URL {}. Result: [json]{}[/json]".format(pdf_path, clean_parsed)
+                        # userInput = "PDF has been analyzed from URL {}. Result: [json]{}[/json]".format(pdf_path, clean_parsed)
                         
                         # if pdf_path.startswith("http"):
                         #     # extracted_data = PdfToImage.pdf_page_to_base64_from_url(pdf_path)
