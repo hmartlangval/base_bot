@@ -41,8 +41,7 @@ class WebpageScreenshotExtension:
             default_output_dir: Default directory for saving PDFs if not specified
         """
         
-        self.default_output_dir = configuration.get('downloads_path', "downloads")
-        os.makedirs(self.default_output_dir, exist_ok=True)
+        self.bot_config = configuration
     
         
     def extend(self, controller: Controller) -> Controller:
@@ -72,7 +71,8 @@ class WebpageScreenshotExtension:
             # else:
             #     print("NO CUStom cOntrOls>>>> No ZOOMINg")
             
-            downloads_path = self.default_output_dir
+            downloads_path = self.bot_config.get('custom_downloads_path')
+            # downloads_path = self.default_output_dir    
             
             filename = params.filename
             if not filename:
