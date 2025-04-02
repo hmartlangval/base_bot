@@ -2,7 +2,7 @@ import os
 import asyncio
 import time
 from langchain_openai import ChatOpenAI
-from browser_use import Agent, Controller
+from browser_use import Agent, Controller, AgentHistoryList
 
 from base_bot.extensions.chromium_extension import ChromiumExtension
 from base_bot.extensions.pdf_save_extension import PDFExtension
@@ -34,11 +34,44 @@ class BrowserClientBaseBot(LLMBotBase):
         # Set up event listeners
         self.setup_event_listeners()
     
+    def check_success_or_failure(self, history):
+        """Check if the result is a success or failure"""
+        
+        if not isinstance(history, AgentHistoryList):
+            print("history is not an AgentHistoryList")
+            return [False, None]
+        
+        if history.is_done():
+            # Check if the agent was successful
+            if history.is_successful():
+                print("Agent completed the task successfully")
+                
+                # You can also get the final result if any
+                final_result = history.final_result()
+                if final_result:
+                    print("Final result:", final_result)
+                    return [True, final_result]
+            else:
+                print("Agent completed but was not successful")
+                
+            # Check for any errors that occurred
+            if history.has_errors():
+                errors = history.errors()
+                print("Errors:", errors)
+                return [False, errors]
+        else:
+            print("Agent did not complete the task")
+            return [False, 'Agent did not complete the task']
+
+        return [False, None]
+            
+        
+    
     def setup_event_listeners(self):
         """Set up event listeners for events from parent class"""
         # Listen for the restart event
         if hasattr(self, 'on') and callable(self.on):
-            # self.on('restart', self.on_restart_received)
+
             self.on('control_command', self.on_control_command)
     
     def on_control_command(self, message):
@@ -47,10 +80,8 @@ class BrowserClientBaseBot(LLMBotBase):
         if message.get('command') == 'cancel':
             self.on_cancel_received()
     
-    def on_cancel_received(self, *args, **kwargs):
-        """Handle restart event from parent class with graceful shutdown"""
-        print("Cancel received - gracefully shutting down browser automation...")
-        
+    async def gracefully_shutdown_agent(self):
+        """Common method to gracefully shutdown the agent and browser"""
         # Create a new event loop for this thread if needed
         try:
             loop = asyncio.get_event_loop()
@@ -89,18 +120,40 @@ class BrowserClientBaseBot(LLMBotBase):
                 else:
                     loop.run_until_complete(self.active_browser.close())
                 
-                print("Browser successfully closed on cancel")
+                print("Browser successfully closed")
             except Exception as e:
-                print(f"Error closing browser on cancel: {e}")
+                print(f"Error closing browser: {e}")
             finally:
                 # Clear the references regardless of success
                 self.active_browser = None
                 self.active_agent = None
     
+    def on_cancel_received(self, *args, **kwargs):
+        """Handle cancel event - gracefully shut down the agent and browser"""
+        print("Cancel received - gracefully shutting down browser automation...")
+        
+        # Create a new event loop for this thread if needed
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        # Use the common shutdown method
+        loop.run_until_complete(self.gracefully_shutdown_agent())
+        print("Browser automation successfully cancelled")
+    
     async def call_agent(self, task, extend_system_message=None, sensitive_data=None):
         
         if not task:
             return "No instructions provided"
+
+        # Store parameters for potential restart
+        self.last_task_params = {
+            'task': task,
+            'extend_system_message': extend_system_message,
+            'sensitive_data': sensitive_data
+        }
 
         headless = self.config['browser_headless']
         

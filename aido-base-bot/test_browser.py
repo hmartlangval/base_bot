@@ -18,10 +18,13 @@ class TestBrowserClient(BrowserClientBaseBot):
     async def generate_response(self, message):
         print("generate_response: ", message)
         
-        instructions = await self.quick_load_prompts('prompts/simple.txt')
+        # instructions = await self.quick_load_prompts('prompts/simple.txt')
         
-        result = await self.call_agent(instructions)
+        result = await self.call_agent("You are navigating a webpage http://localhost:5500/simplepage.html. save the page as pdf")
         print(result)
+        
+        is_success = self.check_success_or_failure(result)
+        print("is_success: ", is_success)
         
         
         return 'done'

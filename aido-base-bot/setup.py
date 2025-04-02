@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='base_bot',
-    version='3.3.1',
+    version='3.3.2',
     packages=find_packages(),
     install_requires=[
         'python-dotenv>=1.0.0',

@@ -19,6 +19,25 @@ from base_bot import BaseBot
 #         "x_zip_code": "34667"
 #     }
 # }
+
+# json_data = {
+#   "order_number": "WTS-25-000016 Order",
+#   "s_data": {
+#     "x_county": "pasco",
+#     "x_property_address": "13127 Keel Court, Hudson, FL 34667",
+#     "x_account_number": "",
+#     "x_house_number": "13127",
+#     "x_street_name": "Keel Court",
+#     "x_city": "Hudson",
+#     "x_zip_code": "34667"
+#   },
+#   "context": {
+#     "pdf_path": "http://localhost:3000/api/data/1743612794545-WTS-25-000016 Order.pdf",
+#     "original_filename": "WTS-25-000016 Order.pdf",
+#     "file_type": "application/pdf",
+#     "id": "67ed6b7d1bc731e14544f672"
+#   }
+# }
 # singified_json = json.dumps(json_data).replace('"', '\\"')
 # print('string', singified_json)
 
