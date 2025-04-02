@@ -37,8 +37,9 @@ class PDFExtension:
             default_output_dir: Default directory for saving PDFs if not specified
         """
         
-        self.default_output_dir = configuration.get('downloads_path', "downloads")
-        os.makedirs(self.default_output_dir, exist_ok=True)
+        self.bot_config = configuration
+        # self.default_output_dir = configuration.get('downloads_path', "downloads")
+        # os.makedirs(self.default_output_dir, exist_ok=True)
         
     def extend(self, controller: Controller) -> Controller:
         """
@@ -62,8 +63,9 @@ class PDFExtension:
             print("saving params:", params)
             # Generate path if not provided
             print("params.path: ", params.path)
-            print("self.default_output_dir: ", self.default_output_dir)
-            path = os.path.join(self.default_output_dir, params.path)
+            print("self.bot_config: ", self.bot_config)
+            print("self.bot_config.custom_downloads_path: ", self.bot_config.get('custom_downloads_path'))
+            path = os.path.join(self.bot_config.get('custom_downloads_path'), params.path)
             
             # if not path:
             #     page_title = await page.title()
