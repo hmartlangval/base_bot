@@ -1,3 +1,4 @@
+import ctypes
 import json
 import time
 from base_bot.browser_client_base_bot import BrowserClientBaseBot
@@ -117,10 +118,19 @@ class TestBrowserClient(BrowserClientBaseBot):
         # else:
         #     return 'Prompt is already loaded... >>>' + json.dumps(self.prompt_json, indent=4)
     
-    
+def get_window_handle():
+    user32 = ctypes.windll.user32
+    handle = user32.GetForegroundWindow()
+    return handle
+   
 bot = TestBrowserClient(options={
+    "window_hwnd": get_window_handle(),
+    "commands": {
+       "restart": "^c^cpython test.py"  
+    },
     "bot_id": "final",
     "bot_name": "final bot",
+    "bot_type": "bot",
     'model': 'gpt-4o-mini',
     'downloads_path': 'my_downloads',
     'autojoin_channel': 'general',

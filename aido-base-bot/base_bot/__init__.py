@@ -41,6 +41,8 @@ class BaseBot(EventEmitter, ConfigurableApp):
         options = options or {}
         self.config.update({
             "bot_id": options.get("bot_id", os.getenv("BOT_ID", "base-bot")),
+            "window_hwnd": options.get("window_hwnd", 0),
+            "commands": options.get("commands", {}),
             "bot_name": options.get("bot_name", os.getenv("BOT_NAME", "Base Bot")),
             "bot_type": options.get("bot_type", os.getenv("BOT_TYPE", "base")),
             "server_url": options.get("server_url", os.getenv("SERVER_URL", "http://localhost:3000")),
@@ -118,10 +120,12 @@ class BaseBot(EventEmitter, ConfigurableApp):
             self.socket.emit("register", {
                 "botId": self.config["bot_id"],
                 "name": self.config["bot_name"],
-                "type": self.config["bot_type"]
+                "type": self.config["bot_type"],
+                "window_hwnd": self.config["window_hwnd"],
+                "commands": self.config["commands"]
             })
             
-            self.print_message(f'Registered as {self.config["bot_name"]} ({self.config["bot_id"]})')
+            self.print_message(f'Registered as {self.config["bot_name"]} ({self.config["bot_id"]}) ({self.config["window_hwnd"]})')
             self.display_prompt()
             
             # Emit connected event
@@ -153,6 +157,12 @@ class BaseBot(EventEmitter, ConfigurableApp):
             self.emit("error", error)
             
         # Message events
+        @self.socket.on("control_command")
+        def on_control_command(message):
+            self.print_message(f"Control command: {message}")
+            if message.get('targetId') == self.config["bot_id"]:
+                self.emit("control_command", message)
+                
         @self.socket.on("new_message")
         def on_new_message(message):
             # Don't show our own messages again
