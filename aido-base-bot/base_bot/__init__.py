@@ -201,8 +201,8 @@ class BaseBot(EventEmitter, ConfigurableApp):
                             try:
                                 response = loop.run_until_complete(self.generate_response(message))
                             except Exception as e:
-                                self.print_message(f"Error generating response: {str(e)}")
-                                response = "Error generating response"
+                                self.print_message(f"Error generating response x01: {str(e)}")
+                                response = "Error generating response x01"
                             finally:
                                 # Clean up
                                 loop.close()    
@@ -215,7 +215,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
                             
                             self.print_message(f"You responded to {message.get('senderName')}: {response}")
                         except Exception as e:
-                            self.print_message(f"Error generating response: {str(e)}")
+                            self.print_message(f"Error generating response x02: {str(e)}")
                         finally:
                             self.display_prompt()
                     

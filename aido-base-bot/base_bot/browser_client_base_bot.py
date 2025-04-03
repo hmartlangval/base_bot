@@ -1,21 +1,112 @@
 import os
 import asyncio
 import time
+import logging
 from langchain_openai import ChatOpenAI
 from browser_use import Agent, Controller, AgentHistoryList
-
 from base_bot.extensions.chromium_extension import ChromiumExtension
 from base_bot.extensions.pdf_save_extension import PDFExtension
 from base_bot.extensions.map_extension import WebpageScreenshotExtension
+from browser_use.browser.context import BrowserContext
+from browser_use.browser.views import URLNotAllowedError  # Add this import
 
 from base_bot.llm_bot_base import LLMBotBase
 
+logger = logging.getLogger(__name__)
+
+# Monkey patching function
+def apply_browser_use_patches():
+    """Apply monkey patches to browser_use package to customize its behavior."""
+    print("Applying browser_use monkey patches...")
+    
+    # Store original method
+    original_click_element_node = BrowserContext._click_element_node
+    
+    # Create a wrapper for the method we want to patch
+    async def patched_click_element_node(self, element_node):
+        """
+        Patched version of _click_element_node to enable custom filenames for downloads.
+        """
+        print("Using patched _click_element_node method")
+        page = await self.get_current_page()
+
+        try:
+            element_handle = await self.get_locate_element(element_node)
+
+            if element_handle is None:
+                raise Exception(f'Element: {repr(element_node)} not found')
+
+            async def perform_click(click_func):
+                """Performs the actual click, handling both download
+                and navigation scenarios."""
+                if self.config.save_downloads_path:
+                    try:
+                        # Try short-timeout expect_download to detect file download
+                        async with page.expect_download(timeout=5000) as download_info:
+                            await click_func()
+                        download = await download_info.value
+                        
+                        # AIDO Nelvin customization here: Determine filename - check for custom filename attribute
+                        if hasattr(self.config, 'annual_pdf_filename') and self.config.annual_pdf_filename:
+                            # Use custom filename
+                            filename = self.config.annual_pdf_filename
+                            download_path = os.path.join(self.config.save_downloads_path, filename)
+                            print(f"Using custom filename: {filename}")
+                        else:
+                            # Use suggested filename from download
+                            suggested_filename = download.suggested_filename
+                            unique_filename = await self._get_unique_filename(self.config.save_downloads_path, suggested_filename)
+                            download_path = os.path.join(self.config.save_downloads_path, unique_filename)
+                            
+                        # Save the download
+                        await download.save_as(download_path)
+                        print(f"Download saved to: {download_path}")
+                        return download_path
+                    except TimeoutError:
+                        # If no download is triggered, treat as normal click
+                        await page.wait_for_load_state()
+                        await self._check_and_handle_navigation(page)
+                else:
+                    # Standard click logic if no download is expected
+                    await click_func()
+                    await page.wait_for_load_state()
+                    await self._check_and_handle_navigation(page)
+
+            try:
+                return await perform_click(lambda: element_handle.click(timeout=1500))
+            except URLNotAllowedError as e:
+                raise e
+            except Exception:
+                try:
+                    return await perform_click(lambda: page.evaluate('(el) => el.click()', element_handle))
+                except URLNotAllowedError as e:
+                    raise e
+                except Exception as e:
+                    raise Exception(f'Failed to click element: {str(e)}')
+
+        except Exception as e:
+            raise Exception(f'Failed to click element: {repr(element_node)}. Error: {str(e)}')
+    
+    # Apply the patch
+    BrowserContext._click_element_node = patched_click_element_node
+    print("Monkey patch applied successfully")
+
+# Add a try-except to handle the URLNotAllowedError which might not be imported yet
+try:
+    from browser_use.browser.views import URLNotAllowedError
+except ImportError:
+    # Define a placeholder class if the import fails
+    class URLNotAllowedError(Exception):
+        pass
+        
+        
 class BrowserClientBaseBot(LLMBotBase):
     
     def __init__(self, options=None, *args, **kwargs):
-        
         super().__init__(options, *args, **kwargs)
-
+        # Apply monkey patch after initializing the base class
+        apply_browser_use_patches()
+        
         self.controller = Controller()
         
         pdf_extension = PDFExtension(configuration=self.config)
@@ -143,7 +234,7 @@ class BrowserClientBaseBot(LLMBotBase):
         loop.run_until_complete(self.gracefully_shutdown_agent())
         print("Browser automation successfully cancelled")
     
-    async def call_agent(self, task, extend_system_message=None, sensitive_data=None):
+    async def call_agent(self, task, extend_system_message=None, sensitive_data=None, annual_pdf_filename=None):
         
         if not task:
             return "No instructions provided"
@@ -154,10 +245,15 @@ class BrowserClientBaseBot(LLMBotBase):
             'extend_system_message': extend_system_message,
             'sensitive_data': sensitive_data
         }
-
+        
+        # Update local config with the custom filename 
+        self.config.update({
+            "annual_pdf_filename": annual_pdf_filename if annual_pdf_filename else None
+        })
+        
         headless = self.config['browser_headless']
         
-        browser = ChromiumExtension.extend_browser(headless=headless)
+        browser = ChromiumExtension.extend_browser(configuration=self.config, headless=headless)
         
         # Store a reference to the browser so it can be closed on restart
         self.active_browser = browser
@@ -184,5 +280,3 @@ class BrowserClientBaseBot(LLMBotBase):
             await browser.close()
             # Clear the browser reference
             self.active_browser = None
-
-

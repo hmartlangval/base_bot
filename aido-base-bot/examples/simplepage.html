@@ -2,5 +2,41 @@
 <h6>How to use?</h6>
 <ul>
     <li>Open this in live server extension</li>
-    <li>It must be in http://localhost:5500/simplepage.html</li>
+    <li>It must be in http://127.0.0.1:5500/aido-base-bot/examples/simplepage.html</li>
 </ul>
+<a class="liens download-link" href="samplepage.pdf" data-filename="samplepage.pdf">Download file</a>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const downloadLinks = document.querySelectorAll('.download-link');
+
+    downloadLinks.forEach(link => {
+      link.addEventListener('click', async (event) => {
+        event.preventDefault();
+
+        const pdfUrl = link.href;
+        const downloadFileName = link.dataset.filename;
+
+        try {
+          const response = await fetch(pdfUrl);
+          const blob = await response.blob();
+
+          const url = window.URL.createObjectURL(blob);
+
+          // Create the anchor element *inside* the click handler
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = downloadFileName;
+
+          document.body.appendChild(a); // Append the anchor
+          a.click();
+          document.body.removeChild(a); // Remove the anchor
+
+          window.URL.revokeObjectURL(url);
+        } catch (error) {
+          console.error('Error downloading PDF:', error);
+        }
+      });
+    });
+  });
+</script>

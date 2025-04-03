@@ -8,19 +8,47 @@ class ChromiumExtension:
     """
     @staticmethod
     def extend_browser(
+        configuration=None,
         browser_args=None,
         **kwargs
     ) -> Browser:
         
         headless = kwargs.pop('headless', False)
         
-        config = BrowserConfig(
-            # extra_chromium_args=browser_args,
-            headless=headless
-            # **kwargs
+        args = [
+            "--disable-features=ChromeWhatsNewUI",
+        ]
+        
+        downloads_path = configuration.get('custom_downloads_path')
+        
+        # specific AIDO need Nelvin: Get custom filename for downloads if provided
+        annual_pdf_filename = configuration.get('annual_pdf_filename')
+        print(f"Setting up browser with annual_pdf_filename: {annual_pdf_filename}")
+        
+        if browser_args:
+            args.extend(browser_args)
+        
+        # Create a browser context config with our custom attributes
+        context_config = BrowserContextConfig(
+            save_downloads_path=downloads_path
         )
         
-        return Browser(config=config)
+        # Add our custom attribute to the context config
+        # BrowserContextConfig is a dataclass, so we can set attributes directly
+        setattr(context_config, 'annual_pdf_filename', annual_pdf_filename)
+        print(f"Added annual_pdf_filename={annual_pdf_filename} to context_config")
+            
+        config = BrowserConfig(
+            extra_chromium_args=args,
+            headless=headless,
+            new_context_config=context_config
+        )
+        
+        browser = Browser(
+            config=config,
+        )
+        
+        return browser
     
     @staticmethod
     def extend_browser_wip(
