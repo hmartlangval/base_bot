@@ -20,7 +20,7 @@ class TestBrowserClient(BrowserClientBaseBot):
         
         # instructions = await self.quick_load_prompts('prompts/simple.txt')
         
-        result = await self.call_agent("You are navigating a webpage http://localhost:5500/simplepage.html. save the page as pdf")
+        result = await self.call_agent("You are navigating a webpage http://127.0.0.1:5500/aido-base-bot/examples/simplepage.html. save the page as pdf")
         print(result)
         
         is_success = self.check_success_or_failure(result)

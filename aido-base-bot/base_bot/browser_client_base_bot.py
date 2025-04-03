@@ -9,7 +9,8 @@ from base_bot.extensions.pdf_save_extension import PDFExtension
 from base_bot.extensions.map_extension import WebpageScreenshotExtension
 from browser_use.browser.context import BrowserContext
 from browser_use.browser.views import URLNotAllowedError  # Add this import
-
+from browser_use.agent.views import AgentOutput
+from browser_use.browser.context import BrowserState
 from base_bot.llm_bot_base import LLMBotBase
 
 logger = logging.getLogger(__name__)
@@ -234,6 +235,26 @@ class BrowserClientBaseBot(LLMBotBase):
         loop.run_until_complete(self.gracefully_shutdown_agent())
         print("Browser automation successfully cancelled")
     
+    
+    async def log_completion_to_external_service(self, history: AgentHistoryList):
+        # Here you can extract just the "next step" information from agent_output
+        next_step = history.final_result()
+        
+        self.socket.emit('message', {
+            "channelId": "general",
+            "content": next_step
+        })
+    
+    async def log_step_to_external_service(self, browser_state: BrowserState, agent_output: AgentOutput, step_number: int):
+        # Get the next goal from the agent's brain
+        next_step = agent_output.current_state.next_goal
+        
+        self.socket.emit('message', {
+            "channelId": "general",
+            "content": next_step
+        })
+       
+    
     async def call_agent(self, task, extend_system_message=None, sensitive_data=None, annual_pdf_filename=None):
         
         if not task:
@@ -266,6 +287,8 @@ class BrowserClientBaseBot(LLMBotBase):
                 controller=self.controller,
                 extend_system_message=extend_system_message,
                 sensitive_data=sensitive_data,
+                register_new_step_callback=self.log_step_to_external_service,
+                register_done_callback=self.log_completion_to_external_service
             )
             
             # Store reference to the agent so it can be gracefully stopped
