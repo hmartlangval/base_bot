@@ -1,6 +1,7 @@
 import os
 from browser_use.browser.browser import Browser, BrowserConfig
 from browser_use.browser.context import BrowserContextConfig
+from base_bot.types import BrowserSessionConfig
 
 class ChromiumExtension:
     """
@@ -8,6 +9,7 @@ class ChromiumExtension:
     """
     @staticmethod
     def extend_browser(
+        session_config: BrowserSessionConfig = None,
         configuration=None,
         browser_args=None,
         **kwargs
@@ -21,10 +23,6 @@ class ChromiumExtension:
         
         downloads_path = configuration.get('custom_downloads_path')
         
-        # specific AIDO need Nelvin: Get custom filename for downloads if provided
-        annual_pdf_filename = configuration.get('annual_pdf_filename')
-        print(f"Setting up browser with annual_pdf_filename: {annual_pdf_filename}")
-        
         if browser_args:
             args.extend(browser_args)
         
@@ -35,8 +33,9 @@ class ChromiumExtension:
         
         # Add our custom attribute to the context config
         # BrowserContextConfig is a dataclass, so we can set attributes directly
-        setattr(context_config, 'annual_pdf_filename', annual_pdf_filename)
-        print(f"Added annual_pdf_filename={annual_pdf_filename} to context_config")
+        if session_config:
+            for key, value in session_config.items():
+                setattr(context_config, key, value)
             
         config = BrowserConfig(
             extra_chromium_args=args,
@@ -48,7 +47,8 @@ class ChromiumExtension:
             config=config,
         )
         
-        return browser
+        return [browser, context_config]
+        
     
     @staticmethod
     def extend_browser_wip(
