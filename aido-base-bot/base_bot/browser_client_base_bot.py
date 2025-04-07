@@ -9,6 +9,7 @@ from browser_use import Agent, Controller, AgentHistoryList
 from base_bot.extensions.chromium_extension import ChromiumExtension
 from base_bot.extensions.pdf_save_extension import PDFExtension
 from base_bot.extensions.map_extension import WebpageScreenshotExtension
+from base_bot.extensions.print_dialog_extension import PrintDialogHandler
 from browser_use.browser.context import BrowserContext
 from browser_use.browser.views import URLNotAllowedError  # Add this import
 from browser_use.agent.views import AgentOutput
@@ -118,6 +119,9 @@ class BrowserClientBaseBot(LLMBotBase):
         
         webpage_screenshot_extension = WebpageScreenshotExtension(configuration=self.config)
         webpage_screenshot_extension.extend(self.controller)
+        
+        print_dialog_extension = PrintDialogHandler(configuration=self.config)
+        print_dialog_extension.extend(self.controller)
         
         # Track active browser instances and their contexts
         self._browser_instances = {}  # Dict to store browser instances and their contexts

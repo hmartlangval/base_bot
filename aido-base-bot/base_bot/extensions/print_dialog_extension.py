@@ -22,7 +22,7 @@ class PrintDialogHandler:
         Args:
             configuration: Configuration dictionary containing settings like output directory
         """
-        self.config = configuration or {}
+        self.bot_config = configuration or {}
    
     async def setup_print_dialog_handler(self, page: Page):
         """Set up handlers for system print dialogs."""
@@ -46,7 +46,7 @@ class PrintDialogHandler:
                 # Generate filename with timestamp
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 filename = f"print_output_{timestamp}.pdf"
-                output_path = os.path.join(self.config.get('custom_downloads_path', 'downloads'), filename)
+                output_path = os.path.join(self.bot_config.get('custom_downloads_path', 'downloads'), filename)
                
                 # Click the Save/Print button
                 save_button = await page.wait_for_selector('button[aria-label="Print"]')
