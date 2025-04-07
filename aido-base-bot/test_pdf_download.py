@@ -5,17 +5,26 @@ import asyncio
 import logging
 from functools import wraps
 import inspect
-
+from dotenv import load_dotenv
+load_dotenv()
 from base_bot.browser_client_base_bot import BrowserClientBaseBot
 
 
 class TestBrowserClient(BrowserClientBaseBot):
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, options=None, *args, **kwargs):
         # Apply monkey patches before initializing the bot
         # apply_browser_use_patches()
+        options = options if options else kwargs.get('options', {})
         
-        super().__init__(*args, **kwargs) 
+        downloads_path = options.get("downloads_path", None)
+        if not downloads_path:
+            downloads_path = os.getenv("DOWNLOADS_PATH", None)
+            if downloads_path:
+                options.setdefault("downloads_path", downloads_path)
+                kwargs['options'] = options
+                
+        super().__init__(options, *args, **kwargs) 
         
     async def generate_response(self, message):
         print("generate_response: ", message)
@@ -30,7 +39,12 @@ class TestBrowserClient(BrowserClientBaseBot):
         
         filename =  f"{order_number}_TEST.pdf" if order_number else None
         
-        result = await self.call_agent("You are navigating a webpage http://127.0.0.1:5500/aido-base-bot/examples/simplepage.html. click on the download link to download a file", None, None, filename)
+        result = await self.call_agent("You are navigating a webpage http://127.0.0.1:5500/aido-base-bot/examples/simplepage.html. click on the download link to download a file", None, None, 
+                                        {
+                                            "annual_pdf_filename": filename,
+                                            "original_json": json_data
+                                        }
+                                    )
         print(result)
         
         is_success = self.check_success_or_failure(result)

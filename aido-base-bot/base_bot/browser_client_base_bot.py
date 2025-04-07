@@ -1,7 +1,9 @@
+import json
 import os
 import asyncio
 import time
 import logging
+import uuid
 from langchain_openai import ChatOpenAI
 from browser_use import Agent, Controller, AgentHistoryList
 from base_bot.extensions.chromium_extension import ChromiumExtension
@@ -12,6 +14,7 @@ from browser_use.browser.views import URLNotAllowedError  # Add this import
 from browser_use.agent.views import AgentOutput
 from browser_use.browser.context import BrowserState
 from base_bot.llm_bot_base import LLMBotBase
+from base_bot.types import BrowserSessionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +119,8 @@ class BrowserClientBaseBot(LLMBotBase):
         webpage_screenshot_extension = WebpageScreenshotExtension(configuration=self.config)
         webpage_screenshot_extension.extend(self.controller)
         
-        # Track active browser instances
-        self.active_browser = None
+        # Track active browser instances and their contexts
+        self._browser_instances = {}  # Dict to store browser instances and their contexts
         # Track active agent instance
         self.active_agent = None
         
@@ -201,24 +204,43 @@ class BrowserClientBaseBot(LLMBotBase):
             except Exception as e:
                 print(f"Error while pausing/stopping agent: {e}")
         
-        # Step 3: Close the browser
-        if self.active_browser:
+        # Step 3: Close all browser instances
+        for browser_id, (browser, context_config) in self._browser_instances.items():
+            original_json = None
             try:
-                print("Closing browser...")
-                # Run the close method in the event loop
-                if loop.is_running():
-                    future = asyncio.run_coroutine_threadsafe(self.active_browser.close(), loop)
-                    future.result(timeout=5)  # Wait for up to 5 seconds
-                else:
-                    loop.run_until_complete(self.active_browser.close())
+                # Log browser context info if available
+                if context_config:
+                    original_json = getattr(context_config, 'original_json', None)
+                    # custom_filename = getattr(context_config, 'annual_pdf_filename', None)
+                    # print(f"Retrieved before closing browser filename: {custom_filename} {original_json}")
                 
-                print("Browser successfully closed")
+                print(f"Closing browser instance {browser_id}...")
+                
+                
+                json_string = ""
+                if original_json:
+                    print("_____PREPARING JSON STRING")
+                    json_string = f"[json]{json.dumps(original_json)}[/json] [Retry]"
+                    print("JSON STRING", json_string)
+                else:
+                    print("----------NO ORIGINAL JSON")
+                    
+                self.socket.emit('message', {
+                    "channelId": "general",
+                    "content": f"Task cancelled for order \"{original_json['order_number']}\". {json_string}"
+                })
+                
+                try:
+                    await browser.close()
+                except Exception as e:
+                    print(f"Error closing browser instance {browser_id}: {e}")
+                print(f"Browser instance {browser_id} successfully closed")
             except Exception as e:
-                print(f"Error closing browser: {e}")
-            finally:
-                # Clear the references regardless of success
-                self.active_browser = None
-                self.active_agent = None
+                print(f"Error during cleanup of browser instance {browser_id}: {e}")
+        
+        # Clear all references
+        self._browser_instances.clear()
+        self.active_agent = None
     
     def on_cancel_received(self, *args, **kwargs):
         """Handle cancel event - gracefully shut down the agent and browser"""
@@ -255,8 +277,7 @@ class BrowserClientBaseBot(LLMBotBase):
         })
        
     
-    async def call_agent(self, task, extend_system_message=None, sensitive_data=None, annual_pdf_filename=None):
-        
+    async def call_agent(self, task, extend_system_message=None, sensitive_data=None, session_config: BrowserSessionConfig = None):
         if not task:
             return "No instructions provided"
 
@@ -267,17 +288,11 @@ class BrowserClientBaseBot(LLMBotBase):
             'sensitive_data': sensitive_data
         }
         
-        # Update local config with the custom filename 
-        self.config.update({
-            "annual_pdf_filename": annual_pdf_filename if annual_pdf_filename else None
-        })
-        
         headless = self.config['browser_headless']
         
-        browser = ChromiumExtension.extend_browser(configuration=self.config, headless=headless)
-        
-        # Store a reference to the browser so it can be closed on restart
-        self.active_browser = browser
+        browser_id = str(uuid.uuid4())
+        [browser, context_config] = ChromiumExtension.extend_browser(session_config, self.config, headless=headless)
+        self._browser_instances[browser_id] = (browser, context_config)
         
         try:
             agent = Agent(
@@ -297,9 +312,13 @@ class BrowserClientBaseBot(LLMBotBase):
             result = await agent.run()
             return result
         finally:
+            # Clean up this specific browser instance
+            if browser_id in self._browser_instances:
+                browser, context_config = self._browser_instances.pop(browser_id)
+                try:
+                    await browser.close()
+                except Exception as e:
+                    print(f"Error during cleanup of browser instance {browser_id}: {e}")
+            
             # Reset the agent reference since run has completed
             self.active_agent = None
-            # Always close the browser when done
-            await browser.close()
-            # Clear the browser reference
-            self.active_browser = None
