@@ -1,3 +1,4 @@
+import json
 import os
 import asyncio
 import time
@@ -205,27 +206,34 @@ class BrowserClientBaseBot(LLMBotBase):
         
         # Step 3: Close all browser instances
         for browser_id, (browser, context_config) in self._browser_instances.items():
+            original_json = None
             try:
                 # Log browser context info if available
                 if context_config:
-                    custom_filename = getattr(context_config, 'annual_pdf_filename', None)
-                    print(f"Retrieved before closing browser filename: {custom_filename}")
+                    original_json = getattr(context_config, 'original_json', None)
+                    # custom_filename = getattr(context_config, 'annual_pdf_filename', None)
+                    # print(f"Retrieved before closing browser filename: {custom_filename} {original_json}")
                 
                 print(f"Closing browser instance {browser_id}...")
                 
-                # Close context first
-                # if context_config:
-                #     try:
-                #         await context_config.close()
-                #     except Exception as e:
-                #         print(f"Error closing context for instance {browser_id}: {e}")
                 
-                # Then close browser
+                json_string = ""
+                if original_json:
+                    print("_____PREPARING JSON STRING")
+                    json_string = f"[json]{json.dumps(original_json)}[/json] [Retry]"
+                    print("JSON STRING", json_string)
+                else:
+                    print("----------NO ORIGINAL JSON")
+                    
+                self.socket.emit('message', {
+                    "channelId": "general",
+                    "content": f"Task cancelled for order \"{original_json['order_number']}\". {json_string}"
+                })
+                
                 try:
                     await browser.close()
                 except Exception as e:
                     print(f"Error closing browser instance {browser_id}: {e}")
-                
                 print(f"Browser instance {browser_id} successfully closed")
             except Exception as e:
                 print(f"Error during cleanup of browser instance {browser_id}: {e}")
@@ -248,11 +256,6 @@ class BrowserClientBaseBot(LLMBotBase):
         # Use the common shutdown method
         loop.run_until_complete(self.gracefully_shutdown_agent())
         print("Browser automation successfully cancelled")
-
-        self.socket.emit('message', {
-            "channelId": "general",
-            "content": 'Browser automation cancelled. [json][/json] [Retry].'
-        })
     
     
     async def log_completion_to_external_service(self, history: AgentHistoryList):

@@ -40,8 +40,9 @@ class TestBrowserClient(BrowserClientBaseBot):
         filename =  f"{order_number}_TEST.pdf" if order_number else None
         
         result = await self.call_agent("You are navigating a webpage http://127.0.0.1:5500/aido-base-bot/examples/simplepage.html. click on the download link to download a file", None, None, 
-                                       {
-                                           "annual_pdf_filename": filename
+                                        {
+                                            "annual_pdf_filename": filename,
+                                            "original_json": json_data
                                         }
                                     )
         print(result)
