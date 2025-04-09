@@ -201,6 +201,14 @@ class BaseBot(EventEmitter, ConfigurableApp):
                             try:
                                 response = loop.run_until_complete(self.generate_response(message))
                             except Exception as e:
+                                retry_text = ""
+                                if message.get('json'):
+                                    retry_text = f" [json]{json.dumps(message.get('json'))}[/json] [Retry]"
+                                    
+                                self.socket.emit("message", {
+                                    "channelId": message.get("channelId"),
+                                    "content": f"Error generating response x01: {str(e)} {retry_text}"
+                                })
                                 self.print_message(f"Error generating response x01: {str(e)}")
                                 response = "Error generating response x01"
                             finally:
