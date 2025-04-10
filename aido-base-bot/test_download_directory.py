@@ -48,13 +48,16 @@ class BB(BaseBot):
     def generate_response(self, message):
         print("testing custom downloads directory")
         
-        json_data = self.extract_json_data(message)
+        config = self.config["downloads_path"]
+        config2 = self.config["custom_downloads_path"]
         
-        if json_data:
-            order_number = json_data.get("order_number")
-            if order_number:
-                new_dl_path = self.create_custom_downloads_directory(order_number)
-                print(new_dl_path)
+        # json_data = self.extract_json_data(message)
+        
+        # if json_data:
+        #     order_number = json_data.get("order_number")
+        #     if order_number:
+        #         new_dl_path = self.create_custom_downloads_directory(order_number)
+        #         print(new_dl_path)
         
         
         return super().generate_response(message)
@@ -62,7 +65,7 @@ class BB(BaseBot):
 bot = BB(options={
     "bot_id": "tdd",
     "bot_name": "test download directory creation",
-    "downloads_path": "E:/nothing_downloads",
+    # "downloads_path": "E:/nothing_downloads",
     "autojoin_channel": "general"
 })
 

@@ -14,6 +14,31 @@ from dotenv import load_dotenv
 
 from base_bot.configurable_base_bot import ConfigurableApp
 
+from typing import List, Dict, Any, Optional
+
+def get_current_utc_time():
+    return datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
+class Task:
+    def __init__(self, id, name, status, result: Optional[any] = None):
+        self.id = id
+        self.name = name
+        self.status = status
+        self.startTime = get_current_utc_time()
+        self.endTime = None
+        self.result = result
+
+class BotState:
+    def __init__(self):
+        self.tasks: List[Task] = []
+        # # self.channel_states: Dict[str, bool] = {}
+        # self.bot_state: Dict[str, Task] = {}
+
+    def to_dict(self):
+        return {
+            "tasks": [task.__dict__ for task in self.tasks]
+        }
+
 class EventEmitter:
     def __init__(self, options=None):
         super().__init__(options)
@@ -31,7 +56,10 @@ class EventEmitter:
                 
 class BaseBot(EventEmitter, ConfigurableApp):
     def __init__(self, options=None):
+        
         super().__init__(options)
+        
+        
         
         # Load environment variables
         load_dotenv()
@@ -51,10 +79,12 @@ class BaseBot(EventEmitter, ConfigurableApp):
         })
         # self.config.update(options)
         # Current state
+        bot_state = BotState()
         self.state = {
             "current_channel_id": None,
             "is_connected": False,
             "connection_attempts": 0,
+            "bot_state": bot_state,
             "channel_states": {}  # Track active state of channels
         }
         
@@ -106,7 +136,14 @@ class BaseBot(EventEmitter, ConfigurableApp):
         # Store the server URL and path
         self.server_url = self.config["server_url"]
         self.server_path = '/api/socket'
-        
+    
+    def cancel_all_active_tasks(self):
+        bot_state = self.state["bot_state"]
+        for task in bot_state.tasks:
+            if task.status == "in_progress":
+                self.task_ended(task.id, "cancelled")
+                
+                
     def setupSocketHandlers(self):
         """Set up Socket.IO event handlers"""
         # Connection events
@@ -122,7 +159,8 @@ class BaseBot(EventEmitter, ConfigurableApp):
                 "name": self.config["bot_name"],
                 "type": self.config["bot_type"],
                 "window_hwnd": self.config["window_hwnd"],
-                "commands": self.config["commands"]
+                "commands": self.config["commands"],
+                "bot_state": self.state["bot_state"].to_dict()
             })
             
             self.print_message(f'Registered as {self.config["bot_name"]} ({self.config["bot_id"]}) ({self.config["window_hwnd"]})')
@@ -162,6 +200,9 @@ class BaseBot(EventEmitter, ConfigurableApp):
             self.print_message(f"Control command: {message}")
             if message.get('targetId') == self.config["bot_id"]:
                 self.emit("control_command", message)
+                if message.get('command') == 'cancel':
+                    self.cancel_all_active_tasks()
+                
                 
         @self.socket.on("new_message")
         def on_new_message(message):
@@ -189,9 +230,9 @@ class BaseBot(EventEmitter, ConfigurableApp):
                         
                         try:
                             
-                            json = self.extract_json_block(message.get("content"))
-                            if json:
-                                message["json"] = json
+                            json_content = self.extract_json_block(message.get("content"))
+                            if json_content:
+                                message["json"] = json_content
                             
                             # Create a new event loop for this thread
                             loop = asyncio.new_event_loop()
@@ -202,15 +243,13 @@ class BaseBot(EventEmitter, ConfigurableApp):
                                 response = loop.run_until_complete(self.generate_response(message))
                             except Exception as e:
                                 retry_text = ""
-                                if message.get('json'):
-                                    retry_text = f" [json]{json.dumps(message.get('json'))}[/json] [Retry]"
+                                if json_content:
+                                    jc = json.dumps(json_content)
+                                    retry_text = f" [json]{jc}[/json] [Retry]"
                                     
-                                self.socket.emit("message", {
-                                    "channelId": message.get("channelId"),
-                                    "content": f"Error generating response x01: {str(e)} {retry_text}"
-                                })
-                                self.print_message(f"Error generating response x01: {str(e)}")
-                                response = "Error generating response x01"
+                                self.print_message(f"Error x01: {str(e)}")
+                                response = f"Error x01: {str(e)} {retry_text}"
+                                self.cancel_all_active_tasks()
                             finally:
                                 # Clean up
                                 loop.close()    
@@ -224,7 +263,12 @@ class BaseBot(EventEmitter, ConfigurableApp):
                             self.print_message(f"You responded to {message.get('senderName')}: {response}")
                         except Exception as e:
                             self.print_message(f"Error generating response x02: {str(e)}")
+                            self.socket.emit("message", {
+                                "channelId": message.get("channelId"),
+                                "content": f"Error x02: {str(e)}"
+                            })
                         finally:
+                            self.cancel_all_active_tasks()
                             self.display_prompt()
                     
                     # Start a thread for the delayed response
@@ -302,6 +346,40 @@ class BaseBot(EventEmitter, ConfigurableApp):
             if self.options.get('autojoin_channel', None) is not None:
                 print('----------------autojoining channel', self.options.get('autojoin_channel', None))
                 self.process_command(f"/join {self.options.get('autojoin_channel', None)}")
+
+    def new_task_started(self, task_id, task_name):
+        bot_state = self.state["bot_state"]
+        task = Task(task_id, task_name, "in_progress", None)
+        bot_state.tasks.append(task)
+        self.state["bot_state"] = bot_state
+        
+        self.socket.emit("bot_state_updated", {
+            "botId": self.config["bot_id"],
+            "botState": bot_state.to_dict()
+        })
+    
+    def task_ended(self, task_id, result: Optional[any] = None):
+        bot_state = self.state["bot_state"]
+        task = next((t for t in bot_state.tasks if t.id == task_id), None)
+        if task:
+            task.endTime = get_current_utc_time()
+            task.result = result
+            task.status = "completed"
+            
+        # Keep no more than 7 tasks in the task list, remove older ones
+        if len(bot_state.tasks) > 7:
+            bot_state.tasks = bot_state.tasks[-7:]
+            
+        self.socket.emit("bot_state_updated", {
+            "botId": self.config["bot_id"],
+            "botState": bot_state.to_dict()
+        })
+        
+        self.state["bot_state"] = bot_state
+
+    def get_bot_state(self):
+        bot_state = self.state["bot_state"]
+        return bot_state
 
     def extract_json_block(self, content):
         """Extract JSON block from content"""
