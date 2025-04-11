@@ -1,6 +1,7 @@
 import queue
 import asyncio
 import re
+import uuid
 import socketio
 import os
 import time
@@ -110,6 +111,8 @@ class BaseBot(EventEmitter, ConfigurableApp):
         # Initialize the bot
         self.init()
         
+        self.pending_futures = {}  # Store pending futures
+        
     def init(self):
         """Initialize the bot"""
         self.initSocket()
@@ -142,8 +145,50 @@ class BaseBot(EventEmitter, ConfigurableApp):
         for task in bot_state.tasks:
             if task.status == "in_progress":
                 self.task_ended(task.id, "cancelled")
-                
-                
+    
+    async def can_bot_receive_new_task(self, target_bot_id):
+        result = await self.enquire_bot_state(target_bot_id)
+        data = result.get("data", None)
+        if not data:
+            return False
+        tasks = data.get("tasks", [])
+        return not any(task.get("status") == "in_progress" for task in tasks)
+    
+
+    async def enquire_bot_state(self, target_bot_id):
+        msg_id = str(uuid.uuid4())
+        request = {
+            "targetBotId": target_bot_id,
+            "msg_id": msg_id
+        }
+        
+        # Create a future and store it
+        try:
+            # Use the main event loop
+            loop = asyncio.get_running_loop()
+            future = loop.create_future()
+            self.pending_futures[msg_id] = future
+            
+            # Emit the request
+            self.socket.emit("enquire_bot_state", request)
+            
+            # Add timeout to prevent hanging
+            try:
+                return await asyncio.wait_for(future, timeout=2.0)
+            except asyncio.TimeoutError:
+                self.print_message(f"Timeout waiting for response to enquire_bot_state with msg_id: {msg_id}")
+                if msg_id in self.pending_futures:
+                    del self.pending_futures[msg_id]
+                raise
+        except Exception as e:
+            self.print_message(f"Error in enquire_bot_state: {str(e)}")
+            if msg_id in self.pending_futures:
+                del self.pending_futures[msg_id]
+            raise
+
+    def on_private_message(self, message):
+        print('Unhandled private message base:', message)
+        
     def setupSocketHandlers(self):
         """Set up Socket.IO event handlers"""
         # Connection events
@@ -202,6 +247,17 @@ class BaseBot(EventEmitter, ConfigurableApp):
                 self.emit("control_command", message)
                 if message.get('command') == 'cancel':
                     self.cancel_all_active_tasks()
+       
+        @self.socket.on("private-message")
+        def on_private_message_from_server(message):
+            self.print_message(f"Private message from server received @ base: {message}")
+            if message.get('msg_type') == "response" and message.get('msg_id') in self.pending_futures:
+                self.print_message(f"Resolving future for msg_id: {message.get('msg_id')}")
+                future = self.pending_futures.pop(message.get('msg_id'))
+                future.set_result(message)
+            else:
+                self.print_message(f"NOT A RESPONSE, NO future for this message.")
+                self.on_private_message(message)
                 
                 
         @self.socket.on("new_message")
