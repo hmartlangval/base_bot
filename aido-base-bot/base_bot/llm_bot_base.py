@@ -62,11 +62,6 @@ class LLMBotBase(BaseBot):
         botId = self.options.get('bot_id', None)
         if not botId:
             raise Exception("bot_id is not set. V2 requires a bot_id to be explicitly set before calling the LLM.")
-            return ["", None, None] # dynamically identify the V2 prompt directory
-        botId = self.options.get('bot_id', None)
-        if not botId:
-            raise Exception("bot_id is not set. V2 requires a bot_id to be explicitly set before calling the LLM.")
-            return ["", None, None]
         
         v2_prompt_dir = self.options.get('prompts_directory', None)
         if not v2_prompt_dir:
@@ -158,10 +153,6 @@ class LLMBotBase(BaseBot):
         if not botId:
             raise Exception("bot_id is not set. V2 requires a bot_id to be explicitly set before calling the LLM.")
             return ["", None, None] # dynamically identify the V2 prompt directory
-        botId = self.options.get('bot_id', None)
-        if not botId:
-            raise Exception("bot_id is not set. V2 requires a bot_id to be explicitly set before calling the LLM.")
-            return ["", None, None]
         
         v2_prompt_dir = self.options.get('prompts_directory', None)
         if not v2_prompt_dir:

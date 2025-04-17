@@ -77,6 +77,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
             "server_url": options.get("server_url", os.getenv("SERVER_URL", "http://localhost:3000")),
             "default_channel": options.get("default_channel", os.getenv("DEFAULT_CHANNEL", "general")),
             "max_reconnect_attempts": int(options.get("max_reconnect_attempts", os.getenv("MAX_RECONNECT_ATTEMPTS", "5"))),
+            "disable_console_input": options.get("disable_console_input", False)
         })
         # self.config.update(options)
         # Current state
@@ -98,9 +99,9 @@ class BaseBot(EventEmitter, ConfigurableApp):
         self._running = False
         self._thread = None
         self._completed = threading.Event()
-        # # if you need child also to have its own thread aside the parent, uncomment below 
-        # self._child_thread = None 
+        self._message_queue = queue.Queue()
         self._exit_flag = threading.Event()  # Flag to signal exit for all threads
+        self._input_thread = None  # Thread for handling console input
         
         # Set up signal handler for graceful exit
         self._original_sigint_handler = signal.getsignal(signal.SIGINT)
@@ -268,7 +269,7 @@ class BaseBot(EventEmitter, ConfigurableApp):
                 
                 if self.should_respond_to(message):
                     # Create a delay to seem more human-like
-                    delay = 1 + random.random() * 2  # 1-3 seconds
+                    delay = 0.5; #1 + random.random() * 2  # 1-3 seconds
                     
                     def delayed_response():
                         time.sleep(delay)
@@ -284,53 +285,53 @@ class BaseBot(EventEmitter, ConfigurableApp):
                             self.display_prompt()
                             return
                         
-                        try:
+                        # try:
                             
-                            json_content = self.extract_json_block(message.get("content"))
-                            if json_content:
-                                message["json"] = json_content
+                        json_content = self.extract_json_block(message.get("content"))
+                        if json_content:
+                            message["json"] = json_content
                             
-                            # Create a new event loop for this thread
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
+                        self.emit('new_message', message)
+                        self.display_prompt()
+                            
+                            # # Create a new event loop for this thread
+                            # loop = asyncio.new_event_loop()
+                            # asyncio.set_event_loop(loop)
                             
                             # Run the async generate_response method
-                            try:
-                                response = loop.run_until_complete(self.generate_response(message))
-                            except Exception as e:
-                                retry_text = ""
-                                if json_content:
-                                    jc = json.dumps(json_content)
-                                    retry_text = f" [json]{jc}[/json] [Retry]"
+                        #     try:
+                        #         response = loop.run_until_complete(self.generate_response(message))
+                        #     except Exception as e:
+                        #         retry_text = ""
+                        #         if json_content:
+                        #             jc = json.dumps(json_content)
+                        #             retry_text = f" [json]{jc}[/json] [Retry]"
                                     
-                                self.print_message(f"Error x01: {str(e)}")
-                                response = f"Error x01: {str(e)} {retry_text}"
-                                self.cancel_all_active_tasks()
-                            finally:
-                                # Clean up
-                                loop.close()    
+                        #         self.print_message(f"Error x01: {str(e)}")
+                        #         response = f"Error x01: {str(e)} {retry_text}"
+                        #         self.cancel_all_active_tasks()
+                        #     finally:
+                        #         # Clean up
+                        #         loop.close()    
                             
-                            # Send the response
-                            self.socket.emit("message", {
-                                "channelId": message.get("channelId"),
-                                "content": response
-                            })
+                        #     # Send the response
+                        #     self.socket.emit("message", {
+                        #         "channelId": message.get("channelId"),
+                        #         "content": response
+                        #     })
                             
-                            self.print_message(f"You responded to {message.get('senderName')}: {response}")
-                        except Exception as e:
-                            self.print_message(f"Error generating response x02: {str(e)}")
-                            self.socket.emit("message", {
-                                "channelId": message.get("channelId"),
-                                "content": f"Error x02: {str(e)}"
-                            })
-                        finally:
-                            self.cancel_all_active_tasks()
-                            self.display_prompt()
+                        #     self.print_message(f"You responded to {message.get('senderName')}: {response}")
+                        # except Exception as e:
+                        #     self.print_message(f"Error generating response x02: {str(e)}")
+                        #     self.socket.emit("message", {
+                        #         "channelId": message.get("channelId"),
+                        #         "content": f"Error x02: {str(e)}"
+                        #     })
+                        # finally:
+                        #     self.cancel_all_active_tasks()
+                            # self.display_prompt()
                     
-                    # Start a thread for the delayed response
-                    response_thread = threading.Thread(target=delayed_response)
-                    response_thread.daemon = True
-                    response_thread.start()
+                    delayed_response()
             
             self.display_prompt()
             
@@ -465,61 +466,143 @@ class BaseBot(EventEmitter, ConfigurableApp):
         self.stop()
         sys.exit(0)
     
+    def console_input_handler(self):
+        """Thread function to handle user input from console"""
+        try:
+            while self._running and not self._exit_flag.is_set():
+                try:
+                    # Use input() in a separate thread to get commands
+                    cmd = input(f"\n[{self.config['bot_name']}] > ").strip()
+                    if self._running:  # Check again in case we were stopped while waiting for input
+                        self._message_queue.put(cmd)
+                except EOFError:
+                    # Handle EOF (Ctrl+D)
+                    self._exit_flag.set()
+                    break
+                except KeyboardInterrupt:
+                    # Handle Ctrl+C
+                    print(f"\n{self.config['bot_name']} interrupted by user")
+                    self._exit_flag.set()
+                    break
+                except Exception as e:
+                    print(f"Input error: {e}")
+        except Exception as e:
+            print(f"Console input handler error: {e}")
+    
     def runUntilStopped(self):
         print(f'{self.config["bot_name"]} started running')
         try:
             self._running = True
+            
+            # Start the console input thread if not disabled
+            if not self.config["disable_console_input"]:
+                self._input_thread = threading.Thread(target=self.console_input_handler)
+                self._input_thread.daemon = True
+                self._input_thread.start()
+                print(f"Console input enabled for {self.config['bot_name']}")
+            
+            # Use an event to block until signaled to exit
             while self._running and not self._exit_flag.is_set():
                 try:
-                    # Use a timeout to allow checking for exit flag
-                    char = input(f'[{self.config["bot_name"]}] enter details. /exit to quit: ')
-                    if char == '/exit':
-                        self.cleanup_and_exit()
-                        break
-                    print(char)
-                    self.process_command(char)
+                    # Check for messages in the queue with a timeout
+                    try:
+                        cmd = self._message_queue.get(timeout=0.5)
+                        self.process_command(cmd)
+                    except queue.Empty:
+                        # No message, just continue waiting
+                        pass
                 except KeyboardInterrupt:
                     print(f'\n{self.config["bot_name"]} process interrupted')
                     break
         except Exception as e:
             print(f'Error in {self.config["bot_name"]}: {e}')
         finally:
+            # Stop the input thread if it's running
+            if self._input_thread and self._input_thread.is_alive():
+                # Can't really stop the input thread directly because it's blocked on input()
+                # But we've set the flags so it will exit after the next input
+                pass
+                
             print(f'{self.config["bot_name"]} finished running')
             self._running = False
             self._completed.set()  # Signal that parent has completed
         
     def start(self):
         try:
-             # Start the socket.io connection
+            # Start the socket.io connection
             if not self.state["is_connected"]:
-                self.socket.connect(
-                    url=self.server_url,
-                    socketio_path=self.server_path
-                )
-                
-            """Start the parent process"""
+                try:
+                    self.socket.connect(
+                        url=self.server_url,
+                        socketio_path=self.server_path
+                    )
+                except Exception as e:
+                    print(f"Socket connection error: {e}")
+                    self.emit("error", e)
+                    
+            # Reset flags before starting
             if self._exit_flag.is_set():
                 self._exit_flag.clear()
-            self._running = True
-            self._thread = threading.Thread(target=self.runUntilStopped)
-            self._thread.daemon = True  # Make threads daemon to auto-exit on main thread exit
-            self._thread.start()
+            self._completed.clear()
+            
+            # Start the main thread if not already running
+            if not self._running:
+                self._running = True
+                if self._thread and self._thread.is_alive():
+                    print("Thread already running, not starting a new one")
+                else:
+                    # Reset the exit flag before starting
+                    self._exit_flag.clear()
+                    self._thread = threading.Thread(target=self.runUntilStopped)
+                    self._thread.daemon = True  # Make threads daemon to auto-exit on main thread exit
+                    self._thread.start()
+                    print(f"Started thread for {self.config['bot_name']}")
+            
+            # Return self for method chaining
+            return self
             
         except Exception as e:
             print(f"Error starting bot: {e}")
             self.emit("error", e)
-
+            return self
+    
+    def add_command(self, command):
+        """Add a command to the message queue for processing"""
+        if self._running:
+            self._message_queue.put(command)
+            return True
+        return False
     
     def stop(self):
         """Stop all threads gracefully"""
+        print(f"Stopping {self.config['bot_name']}...")
+        
+        self.cancel_all_active_tasks()
+        time.sleep(0.5)        
+        
         self._exit_flag.set()
         self._running = False
+        
+        # Disconnect socket if connected
+        if self.state["is_connected"]:
+            print(f"Disconnecting {self.config['bot_name']} from server...")
+            if self.state["current_channel_id"]:
+                self.socket.emit("leave_channel", self.state["current_channel_id"])
+            self.socket.disconnect()
+        
         self._completed.set()
         
         time.sleep(0.5)  # Small delay to allow threads to respond
         # Restore original signal handler
         signal.signal(signal.SIGINT, self._original_sigint_handler)
-        self.cleanup_and_exit()
+        
+        if self._thread and self._thread.is_alive():
+            print(f"Waiting for {self.config['bot_name']} thread to complete...")
+            self._thread.join(timeout=2.0)  # Wait up to 2 seconds for thread to end
+        
+        # We don't join the input thread because it might be blocked on input()
+            
+        print(f"{self.config['bot_name']} stopped")
     
     def join(self, timeout=None):
         """Wait for this parent to complete its execution"""
@@ -560,6 +643,11 @@ class BaseBot(EventEmitter, ConfigurableApp):
     #     except KeyboardInterrupt:
     #         self.cleanup_and_exit()
     
+    def send_message(self, message):
+        self.socket.emit("message", {
+            "channelId": self.state["current_channel_id"],
+            "content": message
+        })
    
     def cleanup_and_exit(self):
         """Clean up resources and exit gracefully"""
@@ -571,27 +659,6 @@ class BaseBot(EventEmitter, ConfigurableApp):
         self.print_message("Exiting bot")
         sys.exit(0)
     
-    
-    # def start(self):
-    #     """Start the bot and connect to the server"""
-    #     try:
-    #         # Start the socket.io connection
-    #         if not self.state["is_connected"]:
-    #             self.socket.connect(
-    #                 url=self.server_url,
-    #                 socketio_path=self.server_path
-    #             )
-            
-    #         # Start the console input loop in a separate thread if not already running
-    #         if not self.input_thread or not self.input_thread.is_alive():
-    #             self.running = True
-    #             self.input_thread = threading.Thread(target=self.console_input_loop)
-    #             self.input_thread.daemon = True
-    #             self.input_thread.start()
-                
-    #     except Exception as e:
-    #         self.print_message(f"Error starting bot: {str(e)}")
-    #         self.emit("error", e)
     
     def process_command(self, input_text):
         """
